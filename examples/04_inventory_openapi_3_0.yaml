@@ -1,11 +1,13 @@
 openapi: 3.0.3
 info:
-  title: Warehouse Inventory Service API
-  version: 1.0.0
-  description: REST API for querying and updating warehouse stock levels.
+  title: Global Warehouse & Order Fulfillment API
+  version: 2.0.0
+  description: >
+    Enterprise REST API for managing warehouse SKU inventory, stock adjustments,
+    and outbound fulfillment shipments.
 servers:
-  - url: https://api.inventory.internal/v1
-    description: Production Warehouse API
+  - url: https://api.fulfillment.dev/v1
+    description: Production Fulfillment Gateway
 security:
   - bearerAuth: []
 components:
@@ -13,6 +15,7 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
+      bearerFormat: JWT
   schemas:
     InventoryItem:
       type: object
@@ -20,28 +23,69 @@ components:
         - sku
         - name
         - quantity
+        - warehouse_id
       properties:
         sku:
           type: string
+          description: Unique stock-keeping unit code
         name:
           type: string
+          description: Human-readable product title
         quantity:
           type: integer
+          description: Available on-hand units
+        warehouse_id:
+          type: string
+          description: Facility identifier (e.g., WH-US-EAST)
+    StockAdjustmentRequest:
+      type: object
+      required:
+        - delta
+        - reason
+      properties:
+        delta:
+          type: integer
+          description: Signed quantity change (+50 or -10)
+        reason:
+          type: string
+          enum:
+            - cycle_count
+            - damaged_goods
+            - restock_receipt
+    ShipmentOrder:
+      type: object
+      required:
+        - sku
+        - units
+        - destination_country
+      properties:
+        sku:
+          type: string
+        units:
+          type: integer
+        destination_country:
+          type: string
 paths:
   /items:
     get:
       operationId: listInventoryItems
-      summary: List warehouse inventory items
+      summary: List warehouse inventory SKUs
       parameters:
         - name: warehouse_id
           in: query
           required: false
           schema:
             type: string
-          description: Filter stock by warehouse code
+          description: Filter stock by warehouse facility code
+        - name: below_reorder_point
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Only return SKUs running low on stock
       responses:
         "200":
-          description: Inventory item list
+          description: Paginated SKU inventory list
           content:
             application/json:
               schema:
@@ -49,8 +93,8 @@ paths:
                 items:
                   $ref: "#/components/schemas/InventoryItem"
     post:
-      operationId: createInventoryItem
-      summary: Register a new inventory SKU
+      operationId: registerInventorySku
+      summary: Register a new warehouse inventory SKU
       requestBody:
         required: true
         content:
@@ -59,7 +103,7 @@ paths:
               $ref: "#/components/schemas/InventoryItem"
       responses:
         "201":
-          description: Created inventory item
+          description: Created SKU record
           content:
             application/json:
               schema:
@@ -67,18 +111,69 @@ paths:
   /items/{sku}:
     get:
       operationId: getInventoryItemBySku
-      summary: Get stock level for a single SKU
+      summary: Get real-time stock level for a single SKU
       parameters:
         - name: sku
           in: path
           required: true
           schema:
             type: string
-          description: Unique item SKU code
+          description: Unique item SKU identifier
       responses:
         "200":
-          description: Inventory item details
+          description: SKU inventory details
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/InventoryItem"
+  /items/{sku}/adjust:
+    post:
+      operationId: adjustSkuStockLevel
+      summary: Record a stock count adjustment for a SKU
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Target SKU code to adjust
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StockAdjustmentRequest"
+      responses:
+        "200":
+          description: Updated SKU stock level
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryItem"
+  /shipments:
+    post:
+      operationId: createOutboundShipment
+      summary: Dispatch an outbound warehouse fulfillment shipment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShipmentOrder"
+      responses:
+        "201":
+          description: Dispatched shipment confirmation
+  /shipments/{shipment_id}:
+    delete:
+      operationId: cancelOutboundShipment
+      summary: Cancel an unshipped fulfillment order
+      parameters:
+        - name: shipment_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique shipment identifier to cancel
+      responses:
+        "200":
+          description: Shipment cancelled

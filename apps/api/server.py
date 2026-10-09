@@ -103,7 +103,7 @@ class CreateProjectRequest(BaseModel):
 class LoadExampleRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    example_id: Literal["pdf", "markdown", "html", "openapi"]
+    example_id: Literal["pdf", "markdown", "html", "openapi", "flagship_review"]
 
 
 class InlineSourceItem(BaseModel):
@@ -735,6 +735,7 @@ def create_local_app(
             "markdown": "02_support_tickets_api.md",
             "html": "03_incident_response_api.html",
             "openapi": "04_inventory_openapi_3_0.yaml",
+            "flagship_review": "05_flagship_review_demo.md",
         }
         fname = example_map[req.example_id]
         sample_path = (config.examples_dir / fname).resolve()

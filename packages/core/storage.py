@@ -776,9 +776,13 @@ class SpigotStorage:
 
             codes_to_resolve = set(resolve_finding_codes or [])
             if target_field == "method_path":
-                codes_to_resolve.update({"CONFLICTING_METHOD_PATH", "MISSING_METHOD"})
+                codes_to_resolve.update(
+                    {"CONFLICTING_METHOD_PATH", "MISSING_METHOD", "UNKNOWN_SEMANTIC_EFFECT"}
+                )
             elif target_field == "method":
-                codes_to_resolve.add("MISSING_METHOD")
+                codes_to_resolve.update({"MISSING_METHOD", "UNKNOWN_SEMANTIC_EFFECT"})
+            elif target_field == "semantic_effect":
+                codes_to_resolve.add("UNKNOWN_SEMANTIC_EFFECT")
             elif target_field == "security_requirement":
                 codes_to_resolve.update({"AMBIGUOUS_AUTH", "UNKNOWN_AUTH"})
             elif target_field == "servers":

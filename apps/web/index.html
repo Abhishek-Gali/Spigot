@@ -64,16 +64,19 @@
           </p>
           <div class="button-row">
             <button type="button" class="btn-secondary btn-load-example" data-example="pdf">
-              Load Sample PDF (Payments API)
+              📄 StripeFlow Payments PDF (3 Pages, 7 Endpoints)
             </button>
             <button type="button" class="btn-secondary btn-load-example" data-example="markdown">
-              Load Sample Markdown (Support Tickets)
+              📝 HelpDesk SLA Markdown (7 Endpoints)
             </button>
             <button type="button" class="btn-secondary btn-load-example" data-example="html">
-              Load Sample HTML (Incidents API)
+              🌐 OpsGuard Incident HTML (5 Endpoints)
             </button>
             <button type="button" class="btn-secondary btn-load-example" data-example="openapi">
-              Load Sample OpenAPI 3.0 (.yaml)
+              ⚙️ Fulfillment OpenAPI 3.0 YAML (6 Endpoints)
+            </button>
+            <button type="button" class="btn-accent btn-load-example" data-example="flagship_review">
+              🔍 Flagship Review Demo (5 Endpoints + 1 Blocker to Resolve)
             </button>
           </div>
         </div>
@@ -112,18 +115,19 @@
               <strong>Authentication</strong>, and <strong>HTTP Verb + Path endpoints</strong>
               (see <code>examples/01_payments_api_manual.pdf</code> or <code>examples/02_support_tickets_api.md</code>):
             </p>
-            <pre class="code-viewer"># Acme Payments REST API (v1)
-Base URL: https://api.payments.internal
+            <pre class="code-viewer"># StripeFlow Payments &amp; Treasury REST API (v2.4)
+Base URL: https://api.stripeflow.dev
 Authentication: Send Authorization: Bearer &lt;token&gt; on all requests.
 
-## List Payment Charges
-GET /v1/charges
-- customer_id (query, string, optional): Filter by customer ID
+## Retrieve Payment Charge
+GET /v1/charges/{charge_id}
+- charge_id (path, string, required): Unique payment charge ID (ch_...)
 
 ## Create Payment Charge
 POST /v1/charges
-- amount_cents (body, integer, required): Charge amount in cents
-- currency (body, string, required): ISO currency code</pre>
+- customer_id (body, string, required): Customer ID to bill
+- amount_cents (body, integer, required): Charge amount in minor units
+- currency (body, string, required): ISO-4217 currency code (USD, EUR)</pre>
           </div>
           <div>
             <h3>❌ Blocked Input (<code>NOT_API_DOCUMENTATION</code>)</h3>

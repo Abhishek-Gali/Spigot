@@ -8,8 +8,8 @@ endobj
 2 0 obj
 <<
 /Type /Pages
-/Count 2
-/Kids [ 5 0 R 7 0 R ]
+/Count 3
+/Kids [ 7 0 R 9 0 R 11 0 R ]
 >>
 endobj
 3 0 obj
@@ -27,48 +27,17 @@ endobj
 endobj
 5 0 obj
 <<
-/Type /Page
-/Resources <<
-/Font <<
-/F1 4 0 R
->>
->>
-/MediaBox [ 0.0 0.0 612 792 ]
-/Parent 2 0 R
-/Contents [ 6 0 R ]
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica-Bold
 >>
 endobj
 6 0 obj
 <<
-/Length 565
+/Type /Font
+/Subtype /Type1
+/BaseFont /Courier
 >>
-stream
-BT
-/F1 11 Tf
-36 740 Td
-(# Acme Payments & Refunds REST API Manual \(v1\)) Tj
-0 -16 Td
-(Base URL: https://api.payments.internal) Tj
-0 -16 Td
-(Authentication: Send Authorization: Bearer <token> on all requests.) Tj
-0 -16 Td
-() Tj
-0 -16 Td
-(## List Payment Charges) Tj
-0 -16 Td
-(GET /v1/charges) Tj
-0 -16 Td
-(- customer_id \(query, string, optional\): Filter charges by customer ID) Tj
-0 -16 Td
-() Tj
-0 -16 Td
-(## Get Payment Charge) Tj
-0 -16 Td
-(GET /v1/charges/{charge_id}) Tj
-0 -16 Td
-(- charge_id \(path, string, required\): Unique payment charge identifier) Tj
-ET
-endstream
 endobj
 7 0 obj
 <<
@@ -76,6 +45,8 @@ endobj
 /Resources <<
 /Font <<
 /F1 4 0 R
+/F2 5 0 R
+/F3 6 0 R
 >>
 >>
 /MediaBox [ 0.0 0.0 612 792 ]
@@ -85,47 +56,205 @@ endobj
 endobj
 8 0 obj
 <<
-/Length 432
+/Length 1104
 >>
 stream
 BT
+42 748 Td
+/F2 16 Tf
+(# StripeFlow Payments & Treasury REST API Reference \(v2.4\)) Tj
+0 -14 Td
+/F1 10 Tf
+(Enterprise Merchant Gateway Specification - Revision 2026.10) Tj
+0 -14 Td
+/F3 11 Tf
+(Base URL: https://api.stripeflow.dev) Tj
+0 -14 Td
 /F1 11 Tf
-36 740 Td
+(Authentication: Send Authorization: Bearer <token> on all requests.) Tj
+0 -14 Td
+/F1 10 Tf
+(All requests and responses use JSON \(application/json\) over TLS 1.3.) Tj
+0 -18 Td
+/F2 13 Tf
+(## List Customer Profiles) Tj
+0 -14 Td
+/F3 11 Tf
+(GET /v1/customers) Tj
+0 -14 Td
+/F1 10 Tf
+(Returns a paginated list of merchant customer profiles.) Tj
+0 -14 Td
+/F3 10 Tf
+(- email \(query, string, optional\): Filter customers by exact email address) Tj
+0 -14 Td
+/F3 10 Tf
+(- limit \(query, integer, optional\): Max records to return \(1-100\)) Tj
+0 -18 Td
+/F2 13 Tf
+(## Retrieve Customer Profile) Tj
+0 -14 Td
+/F3 11 Tf
+(GET /v1/customers/{customer_id}) Tj
+0 -14 Td
+/F1 10 Tf
+(Fetches billing metadata and default payment method for a single customer.) Tj
+0 -14 Td
+/F3 10 Tf
+(- customer_id \(path, string, required\): Unique customer identifier \(cus_...\)) Tj
+ET
+endstream
+endobj
+9 0 obj
+<<
+/Type /Page
+/Resources <<
+/Font <<
+/F1 4 0 R
+/F2 5 0 R
+/F3 6 0 R
+>>
+>>
+/MediaBox [ 0.0 0.0 612 792 ]
+/Parent 2 0 R
+/Contents [ 10 0 R ]
+>>
+endobj
+10 0 obj
+<<
+/Length 1381
+>>
+stream
+BT
+42 748 Td
+/F2 14 Tf
+(# Payment Charges & Capture Operations \(Page 2\)) Tj
+0 -18 Td
+/F2 13 Tf
+(## List Payment Charges) Tj
+0 -14 Td
+/F3 11 Tf
+(GET /v1/charges) Tj
+0 -14 Td
+/F1 10 Tf
+(Lists settled and pending payment charges across the merchant account.) Tj
+0 -14 Td
+/F3 10 Tf
+(- customer_id \(query, string, optional\): Filter charges by customer ID) Tj
+0 -14 Td
+/F3 10 Tf
+(- status \(query, string, optional\): Filter by status \(succeeded, pending, failed\)) Tj
+0 -18 Td
+/F2 13 Tf
+(## Retrieve Payment Charge) Tj
+0 -14 Td
+/F3 11 Tf
+(GET /v1/charges/{charge_id}) Tj
+0 -14 Td
+/F1 10 Tf
+(Retrieves full settlement details and receipt URL for a specific charge.) Tj
+0 -14 Td
+/F3 10 Tf
+(- charge_id \(path, string, required\): Unique payment charge identifier \(ch_...\)) Tj
+0 -18 Td
+/F2 13 Tf
 (## Create Payment Charge) Tj
-0 -16 Td
+0 -14 Td
+/F3 11 Tf
 (POST /v1/charges) Tj
-0 -16 Td
-(- amount_cents \(body, integer, required\): Charge amount in cents) Tj
-0 -16 Td
-(- currency \(body, string, required\): Three-letter ISO currency code) Tj
-0 -16 Td
-() Tj
-0 -16 Td
-(## Cancel Pending Charge) Tj
-0 -16 Td
-(DELETE /v1/charges/{charge_id}) Tj
-0 -16 Td
-(- charge_id \(path, string, required\): Charge identifier to cancel) Tj
+0 -14 Td
+/F1 10 Tf
+(Authorizes and captures a new payment charge against a customer profile.) Tj
+0 -14 Td
+/F3 10 Tf
+(- customer_id \(body, string, required\): Customer identifier to bill) Tj
+0 -14 Td
+/F3 10 Tf
+(- amount_cents \(body, integer, required\): Charge amount in minor currency units) Tj
+0 -14 Td
+/F3 10 Tf
+(- currency \(body, string, required\): Three-letter ISO-4217 currency code \(USD, EUR\)) Tj
+0 -14 Td
+/F3 10 Tf
+(- description \(body, string, optional\): Statement descriptor shown on receipt) Tj
+ET
+endstream
+endobj
+11 0 obj
+<<
+/Type /Page
+/Resources <<
+/Font <<
+/F1 4 0 R
+/F2 5 0 R
+/F3 6 0 R
+>>
+>>
+/MediaBox [ 0.0 0.0 612 792 ]
+/Parent 2 0 R
+/Contents [ 12 0 R ]
+>>
+endobj
+12 0 obj
+<<
+/Length 837
+>>
+stream
+BT
+42 748 Td
+/F2 14 Tf
+(# Refunds & Account Lifecycle Operations \(Page 3\)) Tj
+0 -18 Td
+/F2 13 Tf
+(## Issue Charge Refund) Tj
+0 -14 Td
+/F3 11 Tf
+(POST /v1/charges/{charge_id}/refunds) Tj
+0 -14 Td
+/F1 10 Tf
+(Creates a full or partial refund against a previously captured payment charge.) Tj
+0 -14 Td
+/F3 10 Tf
+(- charge_id \(path, string, required\): Target payment charge identifier to refund) Tj
+0 -14 Td
+/F3 10 Tf
+(- reason \(body, string, required\): Refund reason \(duplicate, fraudulent, requested_by_customer\)) Tj
+0 -18 Td
+/F2 13 Tf
+(## Delete Customer Profile) Tj
+0 -14 Td
+/F3 11 Tf
+(DELETE /v1/customers/{customer_id}) Tj
+0 -14 Td
+/F1 10 Tf
+(Permanently deletes a customer profile and detaches stored payment methods.) Tj
+0 -14 Td
+/F3 10 Tf
+(- customer_id \(path, string, required\): Unique customer identifier to delete) Tj
 ET
 endstream
 endobj
 xref
-0 9
+0 13
 0000000000 65535 f 
 0000000015 00000 n 
 0000000054 00000 n 
-0000000119 00000 n 
-0000000168 00000 n 
-0000000238 00000 n 
-0000000374 00000 n 
-0000000990 00000 n 
-0000001126 00000 n 
+0000000126 00000 n 
+0000000175 00000 n 
+0000000245 00000 n 
+0000000320 00000 n 
+0000000388 00000 n 
+0000000544 00000 n 
+0000001700 00000 n 
+0000001857 00000 n 
+0000003291 00000 n 
+0000003449 00000 n 
 trailer
 <<
-/Size 9
+/Size 13
 /Root 3 0 R
 /Info 1 0 R
 >>
 startxref
-1609
+4338
 %%EOF

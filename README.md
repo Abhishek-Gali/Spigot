@@ -86,10 +86,11 @@ flowchart LR
 
 ### Ready-to-Try Sample Files in [`examples/`](examples/README.md)
 You can upload any of these files in the Web Studio—or click the **1-Click Sample API Docs** buttons right inside Step 1 of `http://127.0.0.1:8000`:
-- **PDF REST API Manual:** [`examples/01_payments_api_manual.pdf`](examples/01_payments_api_manual.pdf) (*Acme Payments & Refunds API* — 4 endpoints)
-- **Markdown REST API Manual:** [`examples/02_support_tickets_api.md`](examples/02_support_tickets_api.md) (*Customer Support Tickets API* — 4 endpoints)
-- **Saved HTML API Reference:** [`examples/03_incident_response_api.html`](examples/03_incident_response_api.html) (*Cloud Incident Response API* — 3 endpoints)
-- **OpenAPI 3.0 YAML Spec:** [`examples/04_inventory_openapi_3_0.yaml`](examples/04_inventory_openapi_3_0.yaml) (*Warehouse Inventory API* — 3 endpoints)
+- **3-Page Typeset PDF Manual:** [`examples/01_payments_api_manual.pdf`](examples/01_payments_api_manual.pdf) (*StripeFlow Payments & Treasury API v2.4* — 7 endpoints across Customers, Charges, and Refunds)
+- **Markdown REST API Manual:** [`examples/02_support_tickets_api.md`](examples/02_support_tickets_api.md) (*HelpDesk Cloud SLA Triage API v2.1* — 7 endpoints across Customers, Tickets, and Comments)
+- **Styled Developer Portal HTML:** [`examples/03_incident_response_api.html`](examples/03_incident_response_api.html) (*OpsGuard Incident & On-Call API* — 5 endpoints)
+- **OpenAPI 3.0.3 YAML Spec:** [`examples/04_inventory_openapi_3_0.yaml`](examples/04_inventory_openapi_3_0.yaml) (*Global Warehouse & Order Fulfillment API* — 6 endpoints with `$ref` schemas)
+- **Flagship Blocker-Resolution Demo:** [`examples/05_flagship_review_demo.md`](examples/05_flagship_review_demo.md) (*FleetCloud Kubernetes Orchestrator API* — 4 clean endpoints + 1 intentional `MISSING_METHOD` blocker on `/v1/clusters/{cluster_id}/drain` to test 1-click Step 3 override resolution)
 
 ---
 

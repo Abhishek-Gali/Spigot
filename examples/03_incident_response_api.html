@@ -2,45 +2,84 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Cloud Incident Response REST API Reference</title>
+  <title>OpsGuard Cloud — Incident &amp; On-Call REST API Reference</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 2rem; line-height: 1.5; }
+    main { max-width: 920px; margin: 0 auto; background: #1e293b; padding: 2rem; border-radius: 10px; border: 1px solid #334155; }
+    h1 { color: #f8fafc; margin-top: 0; border-bottom: 1px solid #334155; padding-bottom: 0.75rem; }
+    h2 { color: #38bdf8; margin-top: 2rem; }
+    code { background: #0f172a; color: #7dd3fc; padding: 0.2rem 0.45rem; border-radius: 4px; font-family: monospace; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; background: #0f172a; }
+    th, td { text-align: left; padding: 0.6rem 0.8rem; border: 1px solid #334155; font-size: 0.9rem; }
+    th { background: #1e293b; color: #94a3b8; }
+  </style>
 </head>
 <body>
   <main>
-    <h1>Cloud Incident Response REST API</h1>
-    <p>Base URL: <code>https://api.incidents.internal</code></p>
+    <h1>OpsGuard Cloud — Incident &amp; On-Call REST API (v1)</h1>
+    <p>Base URL: <code>https://api.opsguard.dev</code></p>
     <p>Authentication: Send <code>Authorization: Bearer &lt;token&gt;</code> on all requests.</p>
 
-    <h2>List Active Incidents</h2>
-    <p><code>GET /v1/incidents</code></p>
+    <h2>List Monitored Services</h2>
+    <p><code>GET /v1/services</code></p>
+    <p>Returns all production services registered in the OpsGuard on-call catalog.</p>
     <table>
       <thead>
         <tr><th>Parameter</th><th>Location</th><th>Type</th><th>Required</th><th>Description</th></tr>
       </thead>
       <tbody>
-        <tr><td>severity</td><td>query</td><td>string</td><td>no</td><td>Filter by severity (sev1, sev2, sev3)</td></tr>
+        <tr><td>environment</td><td>query</td><td>string</td><td>no</td><td>Filter by deployment environment (prod, staging)</td></tr>
+      </tbody>
+    </table>
+
+    <h2>List Active Incidents</h2>
+    <p><code>GET /v1/incidents</code></p>
+    <p>Lists currently triggered or acknowledged production incidents across all on-call rotations.</p>
+    <table>
+      <thead>
+        <tr><th>Parameter</th><th>Location</th><th>Type</th><th>Required</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>severity</td><td>query</td><td>string</td><td>no</td><td>Filter by severity level (sev1, sev2, sev3)</td></tr>
+        <tr><td>status</td><td>query</td><td>string</td><td>no</td><td>Filter by status (triggered, acknowledged, resolved)</td></tr>
       </tbody>
     </table>
 
     <h2>Get Incident Details</h2>
     <p><code>GET /v1/incidents/{incident_id}</code></p>
+    <p>Fetches timeline events, responder assignments, and root-cause tags for a single incident.</p>
     <table>
       <thead>
         <tr><th>Parameter</th><th>Location</th><th>Type</th><th>Required</th><th>Description</th></tr>
       </thead>
       <tbody>
-        <tr><td>incident_id</td><td>path</td><td>string</td><td>yes</td><td>Unique incident identifier</td></tr>
+        <tr><td>incident_id</td><td>path</td><td>string</td><td>yes</td><td>Unique incident identifier (inc_...)</td></tr>
       </tbody>
     </table>
 
-    <h2>Declare New Incident</h2>
+    <h2>Declare Production Incident</h2>
     <p><code>POST /v1/incidents</code></p>
+    <p>Pages the active on-call engineer and opens a new incident war-room channel.</p>
     <table>
       <thead>
         <tr><th>Field</th><th>Location</th><th>Type</th><th>Required</th><th>Description</th></tr>
       </thead>
       <tbody>
-        <tr><td>title</td><td>body</td><td>string</td><td>yes</td><td>Incident title</td></tr>
-        <tr><td>service</td><td>body</td><td>string</td><td>yes</td><td>Affected service slug</td></tr>
+        <tr><td>service_id</td><td>body</td><td>string</td><td>yes</td><td>Target monitored service identifier</td></tr>
+        <tr><td>title</td><td>body</td><td>string</td><td>yes</td><td>Concise incident summary</td></tr>
+        <tr><td>severity</td><td>body</td><td>string</td><td>yes</td><td>Severity level (sev1, sev2, sev3)</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Delete Test Incident</h2>
+    <p><code>DELETE /v1/incidents/{incident_id}</code></p>
+    <p>Deletes a synthetic or drill incident record from the operational log.</p>
+    <table>
+      <thead>
+        <tr><th>Parameter</th><th>Location</th><th>Type</th><th>Required</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>incident_id</td><td>path</td><td>string</td><td>yes</td><td>Unique incident identifier to delete</td></tr>
       </tbody>
     </table>
   </main>

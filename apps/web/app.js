@@ -134,37 +134,50 @@
     const container = document.getElementById("findings-list");
     container.textContent = "";
     const ops = (contract && contract.operations) || [];
-    if ((!res.findings || res.findings.length === 0) && ops.length > 0) {
+    const findings = res.findings || [];
+    const openBlockers = findings.filter(
+      (f) => f.status === "open" && f.severity === "blocker"
+    );
+
+    if (openBlockers.length === 0 && ops.length > 0) {
       const okBanner = document.createElement("div");
       okBanner.className = "item-row resolved";
-      okBanner.textContent = `✅ 0 Open Blockers — ${ops.length} supported endpoint(s) extracted cleanly! Click "Freeze Contract Revision" on the right to proceed to Step 4.`;
+      okBanner.textContent = `✅ 0 Open Blockers — ${ops.length} supported endpoint(s) ready! Click "Freeze Contract Revision" on the right to proceed to Step 4.`;
       container.appendChild(okBanner);
-      ops.forEach((op) => {
-        const opRow = document.createElement("div");
-        opRow.className = "item-row";
-        opRow.tabIndex = 0;
-        const paramNames = (op.parameters || []).map((p) => `${p.external_name} (${p.location})`).join(", ");
-        opRow.textContent = `[READY] ${op.method} ${op.relative_path} (${op.stable_id}) — Auth: ${op.security_requirement.status} — Params: ${paramNames || "none"}`;
-        opRow.addEventListener("click", () => {
-          document.getElementById("input-override-op").value = op.stable_id;
-          document.getElementById("evidence-viewer").textContent =
-            `Operation: ${op.display_name} (${op.stable_id})\nMethod & Path: ${op.method} ${op.relative_path}\nSemantic Effect: ${op.semantic_effect}\nAuth Status: ${op.security_requirement.status}\nParameters: ${JSON.stringify(op.parameters || [], null, 2)}\nRequest Body: ${JSON.stringify(op.request_body || null, null, 2)}`;
-        });
-        container.appendChild(opRow);
-      });
-      return;
     }
-    if (!res.findings || res.findings.length === 0) {
-      container.textContent = "No findings recorded.";
-      return;
-    }
-    res.findings.forEach((f) => {
+
+    findings.forEach((f) => {
       const div = document.createElement("div");
       div.className = `item-row ${f.status === "resolved" ? "resolved" : f.severity}`;
       div.tabIndex = 0;
-      div.textContent = `[${f.status.toUpperCase()} / ${f.severity.toUpperCase()}] ${f.code} (${f.operation_id || "contract"} -> ${f.affected_field}): ${f.explanation}`;
+      div.textContent = `[${f.status.toUpperCase()} / ${f.severity.toUpperCase()}] ${f.code} (${f.operation_id || "contract"} -> ${f.affected_field}): ${f.explanation} (Click to inspect & pre-fill override)`;
       div.addEventListener("click", () => {
         document.getElementById("input-override-op").value = f.operation_id || "";
+        const fieldSelect = document.getElementById("select-override-field");
+        const valInput = document.getElementById("input-override-value");
+        const ratInput = document.getElementById("input-override-rationale");
+        if (f.code === "MISSING_METHOD") {
+          fieldSelect.value = "method";
+          valInput.value = "POST";
+          ratInput.value = "Verified with service owner: administrative action endpoint uses HTTP POST.";
+        } else if (f.code === "CONFLICTING_METHOD_PATH") {
+          fieldSelect.value = "method_path";
+          valInput.value = JSON.stringify({ method: "POST", relative_path: "/v1/action" });
+          ratInput.value = "Verified authoritative method and path with service owner.";
+        } else if (f.code === "MISSING_BASE_URL" || f.code === "CONFLICTING_BASE_URL") {
+          document.getElementById("input-override-op").value = "";
+          fieldSelect.value = "servers";
+          valInput.value = "https://api.example.com";
+          ratInput.value = "Set canonical production gateway Base URL.";
+        } else if (f.code === "UNKNOWN_AUTH" || f.code === "AMBIGUOUS_AUTH") {
+          fieldSelect.value = "security_requirement";
+          valInput.value = JSON.stringify({ status: "public", alternatives: [] });
+          ratInput.value = "Confirmed endpoint authentication policy with service owner.";
+        } else if (f.code === "UNKNOWN_SEMANTIC_EFFECT") {
+          fieldSelect.value = "semantic_effect";
+          valInput.value = "write";
+          ratInput.value = "Confirmed operation mutates server state (write).";
+        }
         const evLines = (f.evidence_details || []).map((ev) => {
           const loc = ev.location || {};
           const pageInfo = loc.page_number ? `Page ${loc.page_number}, ` : "";
@@ -175,6 +188,26 @@
       });
       container.appendChild(div);
     });
+
+    if (ops.length > 0) {
+      ops.forEach((op) => {
+        const opRow = document.createElement("div");
+        opRow.className = "item-row";
+        opRow.tabIndex = 0;
+        const paramNames = (op.parameters || [])
+          .map((p) => `${p.external_name} (${p.location})`)
+          .join(", ");
+        opRow.textContent = `[${op.support_status.toUpperCase()}] ${op.method} ${op.relative_path} (${op.stable_id}) — Auth: ${op.security_requirement.status} — Params: ${paramNames || "none"}`;
+        opRow.addEventListener("click", () => {
+          document.getElementById("input-override-op").value = op.stable_id;
+          document.getElementById("evidence-viewer").textContent =
+            `Operation: ${op.display_name} (${op.stable_id})\nMethod & Path: ${op.method} ${op.relative_path}\nSemantic Effect: ${op.semantic_effect}\nAuth Status: ${op.security_requirement.status}\nParameters: ${JSON.stringify(op.parameters || [], null, 2)}\nRequest Body: ${JSON.stringify(op.request_body || null, null, 2)}`;
+        });
+        container.appendChild(opRow);
+      });
+    } else if (findings.length === 0) {
+      container.textContent = "No findings recorded.";
+    }
   }
 
   function renderOperationsChecklist(contract) {
