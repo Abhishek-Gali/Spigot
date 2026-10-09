@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spigot (DocForge MCP) — Local Documentation-to-MCP Compiler</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="top-bar" role="banner">
+    <div class="brand-group">
+      <h1 class="brand-title">Spigot <span class="brand-sub">/ DocForge MCP</span></h1>
+      <span class="tagline">Local-First Evidence-Grounded Documentation-to-MCP Compiler</span>
+    </div>
+    <div class="status-pills" role="status" aria-live="polite">
+      <span id="badge-network" class="pill pill-offline">Network: STRICT_OFFLINE</span>
+      <span id="badge-model" class="pill pill-neutral">Model: Checking...</span>
+      <span id="badge-sandbox" class="pill pill-warn">Sandbox: Static Only (Container Unavailable)</span>
+      <span id="badge-revision" class="pill pill-neutral">Revision: —</span>
+    </div>
+  </header>
+
+  <nav class="wizard-nav" aria-label="Compiler Workflow">
+    <button type="button" class="step-tab active" data-step="step-import" id="tab-import">
+      1. Project &amp; Import
+    </button>
+    <button type="button" class="step-tab" data-step="step-extract" id="tab-extract">
+      2. Extraction &amp; Jobs
+    </button>
+    <button type="button" class="step-tab" data-step="step-review" id="tab-review">
+      3. Evidence Review &amp; Freeze
+    </button>
+    <button type="button" class="step-tab" data-step="step-plan" id="tab-plan">
+      4. Tool Plan &amp; Policy
+    </button>
+    <button type="button" class="step-tab" data-step="step-export" id="tab-export">
+      5. Generate, Validate &amp; Export
+    </button>
+  </nav>
+
+  <main class="workspace-container" role="main">
+    <div id="global-alert" class="alert-banner hidden" role="alert" aria-live="assertive"></div>
+
+    <!-- STEP 1: PROJECT HOME & IMPORT -->
+    <section id="step-import" class="wizard-panel">
+      <div class="panel-grid">
+        <div class="card">
+          <h2>Create or Load Local Project</h2>
+          <form id="form-create-project">
+            <label for="input-project-name">Project Name</label>
+            <input id="input-project-name" name="name" type="text" required placeholder="e.g., Logistics Service API" />
+            <div class="button-row">
+              <button type="submit" id="btn-create-project" class="btn-primary">Create Project</button>
+            </div>
+          </form>
+          <div id="project-summary-box" class="meta-box">
+            No project loaded yet.
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Import Local API Documentation</h2>
+          <p class="helper-text">
+            Accepted formats: Markdown (<code>.md</code>), UTF-8 Text (<code>.txt</code>),
+            Saved Static HTML (<code>.html</code>), Text-Layer PDF (<code>.pdf</code>),
+            and OpenAPI 3.0 (<code>.yaml</code>, <code>.json</code>). Max 10 MiB per file.
+          </p>
+          <form id="form-upload-sources">
+            <label for="input-source-files">Select Local Documentation Files</label>
+            <input id="input-source-files" type="file" multiple accept=".md,.markdown,.txt,.html,.htm,.pdf,.yaml,.yml,.json" />
+            <div class="button-row">
+              <button type="submit" id="btn-upload-sources" class="btn-primary">Import Selected Files</button>
+            </div>
+          </form>
+          <div class="url-disabled-notice" aria-disabled="true">
+            <strong>Remote URL Acquisition Disabled (STRICT_OFFLINE):</strong>
+            External URL fetching is blocked in offline mode to guarantee zero network egress.
+          </div>
+          <h3>Imported Sources &amp; Intake Findings</h3>
+          <ul id="source-list" class="item-list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 2: EXTRACTION & JOBS -->
+    <section id="step-extract" class="wizard-panel hidden">
+      <div class="card">
+        <h2>Evidence-Grounded Extraction</h2>
+        <p class="helper-text">
+          Runs Stages 1–8 across all imported project documents, verifying exact verbatim quotes,
+          offsets, global authentication inheritance, and conflict blockers.
+        </p>
+        <div class="button-row">
+          <button type="button" id="btn-run-extract" class="btn-primary">Run Extraction</button>
+          <button type="button" id="btn-cancel-job" class="btn-secondary" disabled>Cancel Active Job</button>
+        </div>
+        <div id="job-status-box" class="meta-box" aria-live="polite">
+          No extraction job started.
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 3: EVIDENCE REVIEW & CONTRACT FREEZE -->
+    <section id="step-review" class="wizard-panel hidden">
+      <div class="panel-grid">
+        <div class="card">
+          <h2>Findings Queue &amp; Blocker Resolution</h2>
+          <p class="helper-text">
+            All blocker findings on selected operations must be resolved with an auditable owner
+            override and rationale before freezing the contract.
+          </p>
+          <div id="findings-list" class="item-list" role="region" aria-label="Findings Queue"></div>
+        </div>
+
+        <div class="card">
+          <h2>Source Evidence Viewer &amp; Owner Override</h2>
+          <div id="evidence-viewer" class="code-viewer" tabindex="0">
+            Select a finding or operation to inspect its verbatim source quote and coordinates.
+          </div>
+
+          <form id="form-review-override">
+            <h3>Submit Precondition-Checked Override</h3>
+            <label for="input-override-op">Operation ID (leave blank for contract-level)</label>
+            <input id="input-override-op" type="text" placeholder="e.g., post_v1_tickets_ticket_id_close" />
+
+            <label for="select-override-field">Target Field</label>
+            <select id="select-override-field">
+              <option value="method_path">method_path (JSON {"method", "relative_path"})</option>
+              <option value="method">method (GET / POST / PUT / PATCH / DELETE)</option>
+              <option value="semantic_effect">semantic_effect (read / write / destructive)</option>
+              <option value="security_requirement">security_requirement (JSON object)</option>
+              <option value="servers">servers (Base URL string)</option>
+            </select>
+
+            <label for="input-override-value">New Value (string or JSON)</label>
+            <textarea id="input-override-value" rows="3" required placeholder='{"method": "POST", "relative_path": "/v1/tickets/{ticket_id}/close"}'></textarea>
+
+            <label for="input-override-rationale">Owner Rationale (required)</label>
+            <input id="input-override-rationale" type="text" required placeholder="Verified authoritative endpoint with service owner." />
+
+            <div class="button-row">
+              <button type="submit" id="btn-submit-override" class="btn-primary">Apply Override</button>
+              <button type="button" id="btn-freeze-contract" class="btn-accent">Freeze Contract Revision</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 4: TOOL PLAN & RUNTIME POLICY -->
+    <section id="step-plan" class="wizard-panel hidden">
+      <div class="card">
+        <h2>Tool Plan &amp; Runtime Policy Controls</h2>
+        <p class="helper-text">
+          Select supported operations to expose as MCP tools. Blocked operations are explicitly
+          excluded and cannot be enabled until their findings are resolved.
+        </p>
+        <form id="form-create-plan">
+          <label for="select-policy-mode">Runtime Policy Enforcement Mode</label>
+          <select id="select-policy-mode">
+            <option value="read_only">read_only (Default — denies all write/destructive tools)</option>
+            <option value="restricted_write">restricted_write (Allow explicitly listed write tools)</option>
+            <option value="approval_required">approval_required (Require single-use HMAC approval token)</option>
+          </select>
+
+          <h3>Operations Inventory</h3>
+          <div id="operations-checklist" class="item-list"></div>
+
+          <div class="button-row">
+            <button type="submit" id="btn-create-plan" class="btn-primary">Save Validated Tool Plan</button>
+          </div>
+        </form>
+        <div id="plan-summary-box" class="meta-box">
+          Freeze a contract revision first to configure the Tool Plan.
+        </div>
+      </div>
+    </section>
+
+    <!-- STEP 5: GENERATE, VALIDATE & EXPORT -->
+    <section id="step-export" class="wizard-panel hidden">
+      <div class="card">
+        <h2>Deterministic Generation, Validation &amp; Reproducible ZIP Export</h2>
+        <div class="button-row">
+          <button type="button" id="btn-generate-server" class="btn-primary">Generate MCP Server Package</button>
+          <button type="button" id="btn-validate-artifact" class="btn-secondary">Run Validation Checks</button>
+          <a id="link-download-zip" class="btn-accent hidden" href="#" download>Download Verified .ZIP</a>
+        </div>
+
+        <h3>Truthful Validation Badges</h3>
+        <div id="validation-badges" class="badge-grid">
+          <span class="v-badge" data-check="build_status">Build: not run</span>
+          <span class="v-badge" data-check="static_check_status">Static AST: not run</span>
+          <span class="v-badge" data-check="protocol_check_status">MCP Protocol: not run</span>
+          <span class="v-badge" data-check="mock_test_status">Mock Suite: not run</span>
+          <span class="v-badge" data-check="security_suite_status">Security Checks: not run</span>
+          <span class="v-badge" data-check="live_smoke_status">Live Smoke: skipped</span>
+          <span class="v-badge" data-check="sandbox_status">Sandbox Isolation: unavailable</span>
+        </div>
+
+        <div id="export-summary-box" class="meta-box">
+          No generated artifact yet.
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

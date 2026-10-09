@@ -1,0 +1,76 @@
+{
+  "schema_version": "1.0",
+  "fixture_id": "p1_openapi_inventory_v1",
+  "expected_server_url": "https://api.inventory.acme.internal/v1",
+  "expected_supported_operations": [
+    {
+      "stable_id": "inventory_get_item",
+      "method": "GET",
+      "relative_path": "/items/{id}",
+      "support_status": "supported",
+      "semantic_effect": "read",
+      "parameter_locations_and_safe_names": [
+        {
+          "external_name": "id",
+          "location": "path",
+          "safe_argument_name": "id_path",
+          "required": true
+        },
+        {
+          "external_name": "id",
+          "location": "query",
+          "safe_argument_name": "id_query",
+          "required": false
+        },
+        {
+          "external_name": "tags",
+          "location": "query",
+          "safe_argument_name": "tags",
+          "required": false
+        }
+      ],
+      "security_requirement": {
+        "status": "authenticated",
+        "alternatives": [
+          {
+            "all_of": [
+              "warehouse_bearer"
+            ]
+          },
+          {
+            "all_of": [
+              "partner_api_key",
+              "tenant_query_key"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "stable_id": "inventory_health_check",
+      "method": "GET",
+      "relative_path": "/health",
+      "support_status": "supported",
+      "semantic_effect": "read",
+      "security_requirement": {
+        "status": "public",
+        "alternatives": []
+      }
+    }
+  ],
+  "expected_blocked_operations": [
+    {
+      "stable_id": "inventory_get_category_tree",
+      "expected_finding_codes": [
+        "REF_CYCLE_DETECTED"
+      ]
+    },
+    {
+      "stable_id": "inventory_upload_csv",
+      "expected_finding_codes": [
+        "UNSUPPORTED_MEDIA_TYPE",
+        "UNSUPPORTED_SECURITY_SCHEME"
+      ]
+    }
+  ]
+}

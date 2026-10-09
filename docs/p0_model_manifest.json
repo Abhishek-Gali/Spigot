@@ -1,0 +1,204 @@
+{
+  "schema_version": "1.0",
+  "project_brand": "Spigot / DocForge MCP",
+  "qualified_at": "2026-10-09T10:14:01.935155+00:00",
+  "runtime": {
+    "adapter": "ollama_local",
+    "endpoint": "http://127.0.0.1:11434",
+    "client_version": "0.34.0",
+    "enforced_env": {
+      "OLLAMA_NO_CLOUD": "1",
+      "OLLAMA_HOST": "127.0.0.1:11434"
+    }
+  },
+  "selected_primary_model": {
+    "model_id": "qwen2.5:1.5b",
+    "digest": "65ec06548149b04c096a120e4a6da9d4017ea809c91734ea5631e89f96ddc57b",
+    "size_bytes": 986061892,
+    "parameter_size": "1.5B",
+    "quantization_level": "Q4_K_M",
+    "license": "Apache-2.0",
+    "context_window": 2048,
+    "selection_rationale": "qwen2.5:1.5b (Q4_K_M, 986 MB, Apache-2.0) passed all P0 fixture schema, critical-field, evidence-quote, and conflict/abstention checks while fitting comfortably within laptop RAM alongside the local runtime."
+  },
+  "comparative_spike_runs": [
+    {
+      "model_id": "qwen2.5:1.5b",
+      "digest": "65ec06548149b04c096a120e4a6da9d4017ea809c91734ea5631e89f96ddc57b",
+      "size_bytes": 986061892,
+      "family": "qwen2",
+      "parameter_size": "1.5B",
+      "quantization_level": "Q4_K_M",
+      "license": "Apache-2.0",
+      "metrics": {
+        "cold_header_latency_ms": 7003.44,
+        "warm_section_latencies_ms": [
+          16749.16,
+          6711.6,
+          6382.73,
+          6910.56
+        ],
+        "total_latency_ms": 43757.49,
+        "prompt_tokens": 1637,
+        "eval_tokens": 784
+      },
+      "scores": {
+        "supported_endpoint_precision": "2/2",
+        "supported_endpoint_recall": "2/2",
+        "critical_field_accuracy": "8/8",
+        "abstention_accuracy": "2/2",
+        "evidence_quote_validity": "9/9",
+        "passed_all_gate_checks": true
+      },
+      "evaluated_candidates": [
+        {
+          "candidate_id": "support.get_ticket",
+          "heading_title": "Get Ticket",
+          "support_status": "supported",
+          "method": "GET",
+          "path": "/tickets/{ticket_id}",
+          "finding_codes": [],
+          "verified_quotes": [
+            "- **Method:** `GET`",
+            "- **Path:** `/tickets/{ticket_id}`"
+          ],
+          "unverified_quotes": []
+        },
+        {
+          "candidate_id": "support.create_ticket",
+          "heading_title": "Create Ticket",
+          "support_status": "supported",
+          "method": "POST",
+          "path": "/tickets",
+          "finding_codes": [],
+          "verified_quotes": [
+            "Create a new support ticket in the support queue.",
+            "- **Method:** `POST`",
+            "- **Path:** `/tickets`"
+          ],
+          "unverified_quotes": []
+        },
+        {
+          "candidate_id": "support.close_ticket",
+          "heading_title": "Close Ticket",
+          "support_status": "blocked",
+          "method": "POST",
+          "path": null,
+          "finding_codes": [
+            "CONFLICTING_METHOD_PATH"
+          ],
+          "verified_quotes": [
+            "DELETE /v1/tickets/tkt_101 HTTP/1.1",
+            "| Endpoint | `POST /tickets/{ticket_id}/close` |",
+            "However, the legacy client example below uses `DELETE /tickets/{ticket_id}` to close and remove the ticket:"
+          ],
+          "unverified_quotes": []
+        },
+        {
+          "candidate_id": "support.export_legacy_archive",
+          "heading_title": "Export Legacy Archive",
+          "support_status": "blocked",
+          "method": null,
+          "path": "/tickets/archive/export",
+          "finding_codes": [
+            "MISSING_METHOD",
+            "AMBIGUOUS_AUTH"
+          ],
+          "verified_quotes": [
+            "Authentication for legacy archive exports is still TBD by the security team, and the HTTP verb has not been finalized in this manual revision."
+          ],
+          "unverified_quotes": []
+        }
+      ]
+    },
+    {
+      "model_id": "qwen2.5:0.5b",
+      "digest": "a8b0c51577010a279d933d14c2a8ab4b268079d44c5c8830c0a93900f1827c67",
+      "size_bytes": 397821319,
+      "family": "qwen2",
+      "parameter_size": "494.03M",
+      "quantization_level": "Q4_K_M",
+      "license": "Apache-2.0",
+      "metrics": {
+        "cold_header_latency_ms": 4173.23,
+        "warm_section_latencies_ms": [
+          6275.23,
+          4728.93,
+          4414.07,
+          4218.54
+        ],
+        "total_latency_ms": 23810.0,
+        "prompt_tokens": 1637,
+        "eval_tokens": 619
+      },
+      "scores": {
+        "supported_endpoint_precision": "2/2",
+        "supported_endpoint_recall": "2/2",
+        "critical_field_accuracy": "8/8",
+        "abstention_accuracy": "2/2",
+        "evidence_quote_validity": "9/9",
+        "passed_all_gate_checks": true
+      },
+      "evaluated_candidates": [
+        {
+          "candidate_id": "support.get_ticket",
+          "heading_title": "Get Ticket",
+          "support_status": "supported",
+          "method": "GET",
+          "path": "/tickets/{ticket_id}",
+          "finding_codes": [],
+          "verified_quotes": [
+            "Retrieve a single support ticket by its unique identifier.",
+            "- **Method:** `GET`",
+            "- **Path:** `/tickets/{ticket_id}`"
+          ],
+          "unverified_quotes": []
+        },
+        {
+          "candidate_id": "support.create_ticket",
+          "heading_title": "Create Ticket",
+          "support_status": "supported",
+          "method": "POST",
+          "path": "/tickets",
+          "finding_codes": [],
+          "verified_quotes": [
+            "Create a new support ticket in the support queue.",
+            "- **Method:** `POST`",
+            "- **Path:** `/tickets`"
+          ],
+          "unverified_quotes": []
+        },
+        {
+          "candidate_id": "support.close_ticket",
+          "heading_title": "Close Ticket",
+          "support_status": "blocked",
+          "method": null,
+          "path": null,
+          "finding_codes": [
+            "CONFLICTING_METHOD_PATH"
+          ],
+          "verified_quotes": [
+            "| Endpoint | `POST /tickets/{ticket_id}/close` |",
+            "However, the legacy client example below uses `DELETE /tickets/{ticket_id}` to close and remove the ticket:"
+          ],
+          "unverified_quotes": []
+        },
+        {
+          "candidate_id": "support.export_legacy_archive",
+          "heading_title": "Export Legacy Archive",
+          "support_status": "blocked",
+          "method": null,
+          "path": "/tickets/archive/export",
+          "finding_codes": [
+            "MISSING_METHOD",
+            "AMBIGUOUS_AUTH"
+          ],
+          "verified_quotes": [
+            "Authentication for legacy archive exports is still TBD by the security team, and the HTTP verb has not been finalized in this manual revision."
+          ],
+          "unverified_quotes": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python bytecode & caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Build & packaging artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Local runtime state, secrets, and databases
+.env
+.env.*
+.spigot/
+*.sqlite
+*.sqlite3
+*.db
+
+# Scratch / ad-hoc uploaded files
+.pdf
+docs-python-telegram-bot-org-en-latest.pdf
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

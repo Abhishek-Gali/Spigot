@@ -1,0 +1,108 @@
+{
+  "package": "DocForge MCP planning pack",
+  "status": "PLANNING_ONLY",
+  "date": "2026-10-09",
+  "markdown_files": 20,
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "bytes": 5631,
+      "sha256": "97dee2a8000f7a1bd2d1eed10985b50ddb18075a2af876ea1548769c7fac702d"
+    },
+    {
+      "path": "API_UI_SPEC.md",
+      "bytes": 4702,
+      "sha256": "47fa6d56253a2af0d88e2424cd7be357f914f62fb777659a0ad24ae42fb3ee1a"
+    },
+    {
+      "path": "ARCHITECTURE.md",
+      "bytes": 5734,
+      "sha256": "85b721719f08f20321f6f787683e43e0c3cb9ded8f7b718c14c065c2f8cbdab1"
+    },
+    {
+      "path": "BACKLOG.md",
+      "bytes": 4786,
+      "sha256": "7018d5a30dfa0a0f059bd111b0fea42322d04e963e2a8db7abc2b0bfdbd05cc8"
+    },
+    {
+      "path": "BUILD_AGENT_PROMPT.md",
+      "bytes": 3885,
+      "sha256": "c313dc5ee394d0abf26ea89d8f351dbe27b8d3070788f4467174a841703504a4"
+    },
+    {
+      "path": "COMPATIBILITY.md",
+      "bytes": 4387,
+      "sha256": "65a6e4384161718a4ad2297842561d4081344df37840aeeb7374eac85f7b2c1b"
+    },
+    {
+      "path": "DATA_CONTRACTS.md",
+      "bytes": 7037,
+      "sha256": "5f0253403719a9deb888f77e43a31414f2e32e1e47e1d1429759a0fae7e2e75b"
+    },
+    {
+      "path": "DECISIONS_RISKS.md",
+      "bytes": 4083,
+      "sha256": "dfd89210f6227614e247065419921c82d986f3d3ae250166c583b7990122f200"
+    },
+    {
+      "path": "DOCUMENT_UNDERSTANDING.md",
+      "bytes": 6637,
+      "sha256": "63496dd8cb735ce8db42c5da67199791d599fd48a6095e346ddc4d03732cde38"
+    },
+    {
+      "path": "GENERATOR_RUNTIME.md",
+      "bytes": 6127,
+      "sha256": "3ab9e4c64d616b995a93c6c14a2b33fb68d8de83ea2d0d3c309af9a64fc29db5"
+    },
+    {
+      "path": "IMPLEMENTATION.md",
+      "bytes": 7397,
+      "sha256": "05323f8920be0029ee2703333ca41e076867971c876ea07099613ff3795c1017"
+    },
+    {
+      "path": "LOCAL_AI.md",
+      "bytes": 4495,
+      "sha256": "a5e8d322cc3b366ba08158cb5e91b4f68cc862adb6f0f246ce29f11d3800848a"
+    },
+    {
+      "path": "OFFLINE_OPERATIONS.md",
+      "bytes": 4205,
+      "sha256": "d4a8ee02c254cbee06717646053e1d051604bb45443bf78dacb36a410beefe89"
+    },
+    {
+      "path": "PORTFOLIO_DEMO.md",
+      "bytes": 4119,
+      "sha256": "1737e8e4b172df215cf283fda66942fd46f47ddef68dbc3400e50f433375e469"
+    },
+    {
+      "path": "PRODUCT_REQUIREMENTS.md",
+      "bytes": 5073,
+      "sha256": "20f3141df312ee1435835b5a2620198a5f8f7e958dfac5f1d4238dd8f282f14c"
+    },
+    {
+      "path": "PROGRESS.md",
+      "bytes": 1597,
+      "sha256": "734f9e84b2445181a9e3974c06fc107b90cf859bc14335f24b35c1bdc05d3812"
+    },
+    {
+      "path": "README.md",
+      "bytes": 5129,
+      "sha256": "60255e75b17e75d48ddc1045f41fb9ab3129dbc2aea6c819aad345cf02c833b4"
+    },
+    {
+      "path": "SECURITY.md",
+      "bytes": 5246,
+      "sha256": "ee139bdc6837f66e21f847bbc239abc8c0ea83fa3f7fa316511e9233bd35258c"
+    },
+    {
+      "path": "SOURCES.md",
+      "bytes": 2650,
+      "sha256": "d49c57f6b9083ed4e95d2e1030498293351adff8171507072f4cbdb3140f8aa9"
+    },
+    {
+      "path": "TESTING_EVALUATION.md",
+      "bytes": 6341,
+      "sha256": "21a5e57b20abe9ed7127a16bbc6d3dd4d0561b2481393d642f897def1bea557e"
+    }
+  ]
+}

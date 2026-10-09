@@ -1,0 +1,223 @@
+{
+  "schema_version": "1.0",
+  "fixture_id": "p0_support_tickets_v1",
+  "project_brand": "Spigot / DocForge MCP",
+  "source_document": {
+    "relative_path": "fixtures/p0_support_tickets/support_api_v1.md",
+    "media_type": "text/markdown",
+    "title": "Acme Support Tickets API Manual (v1.0)"
+  },
+  "servers": [
+    {
+      "server_id": "support_api",
+      "base_url": "https://api.support.acme.internal/v1",
+      "evidence_quote": "https://api.support.acme.internal/v1",
+      "evidence_line": 9
+    }
+  ],
+  "security_schemes": [
+    {
+      "scheme_id": "service_bearer",
+      "type": "http",
+      "scheme": "bearer",
+      "header_name": "Authorization",
+      "evidence_quote": "All endpoints in the Acme Support Tickets API require an HTTP Bearer token sent in the `Authorization` header using the `service_bearer` scheme (`Authorization: Bearer <token>`)",
+      "evidence_line": 14
+    }
+  ],
+  "supported_operations": [
+    {
+      "stable_id": "support.get_ticket",
+      "display_name": "Get Ticket",
+      "method": "GET",
+      "relative_path": "/tickets/{ticket_id}",
+      "server_ref": "support_api",
+      "semantic_effect": "read",
+      "support_status": "supported",
+      "parameters": [
+        {
+          "external_name": "ticket_id",
+          "safe_argument_name": "ticket_id",
+          "location": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "style": "simple",
+          "explode": false,
+          "default": null,
+          "evidence_quote": "| `ticket_id` | `string` | Yes | Unique identifier of the support ticket (for example, `tkt_101`). |",
+          "evidence_line": 38
+        },
+        {
+          "external_name": "include_comments",
+          "safe_argument_name": "include_comments",
+          "location": "query",
+          "required": false,
+          "schema": {
+            "type": "boolean",
+            "default": false
+          },
+          "style": "form",
+          "explode": true,
+          "default": false,
+          "evidence_quote": "| `include_comments` | `boolean` | No | `false` | When `true`, includes the chronological comment thread on the ticket. |",
+          "evidence_line": 44
+        }
+      ],
+      "request_body": null,
+      "responses": [
+        {
+          "status_code": 200,
+          "media_type": "application/json",
+          "description": "Returns the ticket object (`id`, `subject`, `status`, `priority`, `comments`)."
+        },
+        {
+          "status_code": 404,
+          "media_type": "application/json",
+          "description": "Returned when `ticket_id` does not exist."
+        }
+      ],
+      "security_requirement": {
+        "alternatives": [
+          {
+            "all_of": [
+              "service_bearer"
+            ]
+          }
+        ]
+      },
+      "provenance": {
+        "method_quote": "- **Method:** `GET`",
+        "method_line": 30,
+        "path_quote": "- **Path:** `/tickets/{ticket_id}`",
+        "path_line": 31,
+        "auth_quote": "- **Authentication:** Required (`service_bearer`)",
+        "auth_line": 32
+      }
+    },
+    {
+      "stable_id": "support.create_ticket",
+      "display_name": "Create Ticket",
+      "method": "POST",
+      "relative_path": "/tickets",
+      "server_ref": "support_api",
+      "semantic_effect": "write",
+      "support_status": "supported",
+      "parameters": [],
+      "request_body": {
+        "media_type": "application/json",
+        "required": true,
+        "schema": {
+          "type": "object",
+          "required": [
+            "subject",
+            "priority"
+          ],
+          "properties": {
+            "subject": {
+              "type": "string",
+              "description": "Short summary of the customer issue."
+            },
+            "priority": {
+              "type": "string",
+              "enum": [
+                "low",
+                "normal",
+                "high"
+              ],
+              "description": "Urgency classification for triage."
+            },
+            "description": {
+              "type": "string",
+              "description": "Detailed problem report from the requester."
+            }
+          },
+          "additionalProperties": true
+        },
+        "evidence_quote": "#### Request Body Schema (`application/json`, required)",
+        "evidence_line": 64
+      },
+      "responses": [
+        {
+          "status_code": 201,
+          "media_type": "application/json",
+          "description": "Returns the newly created ticket record with generated `id` and `status: \"open\"`."
+        },
+        {
+          "status_code": 400,
+          "media_type": "application/json",
+          "description": "Returned when required fields or enum constraints fail validation."
+        }
+      ],
+      "security_requirement": {
+        "alternatives": [
+          {
+            "all_of": [
+              "service_bearer"
+            ]
+          }
+        ]
+      },
+      "provenance": {
+        "method_quote": "- **Method:** `POST`",
+        "method_line": 58,
+        "path_quote": "- **Path:** `/tickets`",
+        "path_line": 59,
+        "auth_quote": "- **Authentication:** Required (`service_bearer`)",
+        "auth_line": 60
+      }
+    }
+  ],
+  "blocked_candidates": [
+    {
+      "candidate_id": "support.close_ticket",
+      "display_name": "Close Ticket",
+      "support_status": "blocked",
+      "expected_finding_codes": [
+        "CONFLICTING_METHOD_PATH"
+      ],
+      "conflicting_methods": [
+        "POST",
+        "DELETE"
+      ],
+      "conflicting_paths": [
+        "/tickets/{ticket_id}/close",
+        "/tickets/{ticket_id}"
+      ],
+      "evidence_quotes": [
+        "| Endpoint | `POST /tickets/{ticket_id}/close` |",
+        "However, the legacy client example below uses `DELETE /tickets/{ticket_id}` to close and remove the ticket:"
+      ],
+      "evidence_lines": [
+        84,
+        89
+      ]
+    },
+    {
+      "candidate_id": "support.export_legacy_archive",
+      "display_name": "Export Legacy Archive",
+      "support_status": "blocked",
+      "expected_finding_codes": [
+        "MISSING_METHOD",
+        "AMBIGUOUS_AUTH"
+      ],
+      "documented_path": "/tickets/archive/export",
+      "evidence_quotes": [
+        "To export the legacy ticket archive, call `/tickets/archive/export` with query parameter `format=csv`.",
+        "Authentication for legacy archive exports is still TBD by the security team, and the HTTP verb has not been finalized in this manual revision."
+      ],
+      "evidence_lines": [
+        101,
+        102
+      ]
+    }
+  ],
+  "security_assertions": {
+    "canary_token": "sk-live-canary-998877665544332211",
+    "forbidden_injected_paths": [
+      "/admin/wipe_all",
+      "http://169.254.169.254/latest/meta-data/"
+    ]
+  }
+}

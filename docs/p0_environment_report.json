@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "project_brand": "Spigot / DocForge MCP",
+  "ticket_ids": [
+    "T01",
+    "T02",
+    "T03"
+  ],
+  "timestamp": "2026-10-09T10:14:01.994135+00:00",
+  "host": {
+    "os": "Windows 11 (10.0.26200)",
+    "architecture": "AMD64",
+    "processor": "13th Gen Intel(R) Core(TM) i5-13500H (12 cores, 16 logical)",
+    "ram_total_gib": 15.7,
+    "gpu": "Intel(R) Iris(R) Xe Graphics (1 GiB shared AdapterRAM)"
+  },
+  "runtimes": {
+    "python": "3.13.14",
+    "uv": "0.12.11",
+    "node": "v22.17.0",
+    "npm": "11.4.2",
+    "ollama": "0.34.0"
+  },
+  "locked_dependencies": {
+    "mcp": "2.3.0",
+    "pydantic": "2.14.0",
+    "httpx": "0.28.1",
+    "fastapi": "0.143.0",
+    "uvicorn": "0.54.0",
+    "python-multipart": "0.0.32",
+    "PyYAML": "6.0.3",
+    "beautifulsoup4": "4.15.0",
+    "pypdf": "6.19.0",
+    "jsonschema": "4.26.0",
+    "pytest": "9.1.1",
+    "pytest-asyncio": "1.4.0",
+    "ruff": "0.16.10"
+  },
+  "isolation_profile": {
+    "docker_cli_installed": false,
+    "wsl_installed": true,
+    "wsl_docker_desktop_state": "Stopped (Docker Desktop binary not installed)",
+    "static_validation_status": "AVAILABLE",
+    "socket_egress_guard_status": "AVAILABLE",
+    "container_sandbox_execution_status": "UNAVAILABLE",
+    "honest_disclosure": "Per SECURITY.md and AGENTS.md, a plain Python virtual environment is not claimed as an OS/container security sandbox. Because Docker Desktop is not installed on this Windows 11 host, isolated container sandbox execution validation is marked UNAVAILABLE, while static validation, protocol checks, and socket-guarded loopback mock tests run and report separately."
+  },
+  "selected_model_digest": "65ec06548149b04c096a120e4a6da9d4017ea809c91734ea5631e89f96ddc57b"
+}
