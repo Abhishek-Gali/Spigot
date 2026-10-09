@@ -113,8 +113,30 @@ def make_error_call_result(
     )
 
 
-def validate_url_against_policy(url: str, policy: dict[str, Any]) -> None:
-    """Enforce STRICT_OFFLINE or CONNECTED_SERVICES origin/SSRF rules on final request URL."""
+def _extract_loopback_ports_from_origins(origins: set[str]) -> set[int]:
+    ports: set[int] = set()
+    for orig in origins:
+        parsed = urlparse(orig if "://" in orig else f"http://{orig}")
+        host = (parsed.hostname or "").strip().lower().strip("[]")
+        if not host:
+            continue
+        port = parsed.port or (443 if (parsed.scheme or "").lower() == "https" else 80)
+        if host == "localhost":
+            ports.add(port)
+            continue
+        try:
+            if ipaddress.ip_address(host).is_loopback:
+                ports.add(port)
+        except ValueError:
+            pass
+    return ports
+
+
+def validate_url_against_policy(url: str, policy: dict[str, Any]) -> str:
+    """Enforce STRICT_OFFLINE or CONNECTED_SERVICES origin/SSRF rules on final request URL.
+
+    Returns the verified destination IP address string to bind the outbound transport connection.
+    """
     parsed = urlparse(url)
     scheme = (parsed.scheme or "").lower()
     if scheme not in {"http", "https"}:
@@ -127,6 +149,16 @@ def validate_url_against_policy(url: str, policy: dict[str, Any]) -> None:
     port = parsed.port or (443 if scheme == "https" else 80)
     profile = policy.get("network_profile", "STRICT_OFFLINE")
     allowed_origins = set(policy.get("allowed_origins", []))
+    allow_any_loopback_port = bool(policy.get("allow_any_loopback_port", False))
+    allowed_loopback_ports = {
+        int(p) for p in policy.get("allowed_loopback_ports", [11434])
+    } | _extract_loopback_ports_from_origins(allowed_origins)
+
+    def _check_loopback_port() -> None:
+        if not allow_any_loopback_port and port not in allowed_loopback_ports:
+            raise PermissionError(
+                f"Loopback port {port} is not in policy allowed_loopback_ports {sorted(allowed_loopback_ports)}"
+            )
 
     ip_obj: ipaddress.IPv4Address | ipaddress.IPv6Address | None = None
     try:
@@ -138,7 +170,8 @@ def validate_url_against_policy(url: str, policy: dict[str, Any]) -> None:
         if ip_obj.is_link_local or str(ip_obj).startswith("169.254."):
             raise PermissionError("Link-local/metadata IP address is forbidden")
         if ip_obj.is_loopback:
-            return
+            _check_loopback_port()
+            return str(ip_obj)
         if ip_obj.is_private or ip_obj.is_multicast or ip_obj.is_unspecified:
             raise PermissionError(f"Private or reserved IP '{ip_obj}' is forbidden")
         if profile == "STRICT_OFFLINE":
@@ -150,10 +183,11 @@ def validate_url_against_policy(url: str, policy: dict[str, Any]) -> None:
             raise PermissionError(
                 f"Origin '{origin}' is not in policy allowed_origins"
             )
-        return
+        return str(ip_obj)
 
     if host == "localhost":
-        return
+        _check_loopback_port()
+        return "127.0.0.1"
 
     if profile == "STRICT_OFFLINE":
         raise PermissionError(
@@ -172,7 +206,12 @@ def validate_url_against_policy(url: str, policy: dict[str, Any]) -> None:
         )
 
     # Verify DNS resolution does not point to loopback, link-local, or private IPs
-    addr_info = socket.getaddrinfo(host, port)
+    try:
+        addr_info = socket.getaddrinfo(host, port)
+    except OSError as exc:
+        raise PermissionError(f"DNS resolution failed for '{host}': {exc}") from exc
+
+    verified_ips: list[str] = []
     for entry in addr_info:
         resolved_str = str(entry[4][0]).split("%")[0]
         resolved_ip = ipaddress.ip_address(resolved_str)
@@ -186,6 +225,54 @@ def validate_url_against_policy(url: str, policy: dict[str, Any]) -> None:
             raise PermissionError(
                 f"Host '{host}' resolved to non-public IP '{resolved_ip}' (SSRF denied)"
             )
+        verified_ips.append(str(resolved_ip))
+
+    if not verified_ips:
+        raise PermissionError(f"Host '{host}' returned no valid IP addresses")
+    return verified_ips[0]
+
+
+class PinnedDNSAsyncTransport(httpx.AsyncBaseTransport):
+    """HTTPX AsyncTransport wrapper that prevents DNS-rebinding TOCTOU by pinning the verified IP."""
+
+    def __init__(
+        self,
+        policy: dict[str, Any],
+        inner: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        self._policy = policy
+        self._inner = inner or httpx.AsyncHTTPTransport(trust_env=False, retries=0)
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        pinned_ip = validate_url_against_policy(str(request.url), self._policy)
+        original_host = request.url.host
+        ip_obj = ipaddress.ip_address(pinned_ip)
+        connect_host = f"[{pinned_ip}]" if isinstance(ip_obj, ipaddress.IPv6Address) else pinned_ip
+        if original_host.strip("[]") != pinned_ip:
+            default_port = 443 if request.url.scheme == "https" else 80
+            host_hdr = (
+                original_host
+                if request.url.port in (None, default_port)
+                else f"{original_host}:{request.url.port}"
+            )
+            headers = request.headers.copy()
+            if "host" not in headers:
+                headers["Host"] = host_hdr
+            extensions = dict(request.extensions)
+            if request.url.scheme == "https" and "sni_hostname" not in extensions:
+                extensions["sni_hostname"] = original_host
+            pinned_request = httpx.Request(
+                method=request.method,
+                url=request.url.copy_with(host=connect_host),
+                headers=headers,
+                stream=request.stream,
+                extensions=extensions,
+            )
+            return await self._inner.handle_async_request(pinned_request)
+        return await self._inner.handle_async_request(request)
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
 
 
 def build_operation_input_schema(op: dict[str, Any]) -> dict[str, Any]:
@@ -277,10 +364,21 @@ class ContractRuntimeEngine:
             ):
                 self.enabled_tool_names.add(t_name)
 
+        self._contract_loopback_ports = _extract_loopback_ports_from_origins(
+            {str(s.get("base_url", "")) for s in self.contract.get("servers", [])}
+        )
         self._consumed_approvals: set[str] = set()
         self._circuit_state: dict[tuple[str, str], dict[str, Any]] = {}
         max_conc = max(1, int(self.policy.get("max_concurrent_calls", 5)))
         self._concurrency_sem = asyncio.Semaphore(max_conc)
+
+    def _effective_network_policy(self) -> dict[str, Any]:
+        eff = dict(self.policy)
+        if "allowed_loopback_ports" not in eff:
+            eff["allowed_loopback_ports"] = sorted(
+                {11434, *self._contract_loopback_ports}
+            )
+        return eff
 
     def _env(self) -> dict[str, str]:
         if self._explicit_environ is not None:
@@ -354,7 +452,7 @@ class ContractRuntimeEngine:
                 self.policy.get("allowed_write_operations", [])
             )
         if mode == "approval_required":
-            return bool(self._env().get("SPIGOT_APPROVAL_SECRET"))
+            return len(self._env().get("SPIGOT_APPROVAL_SECRET", "").strip()) >= 16
         return False
 
     def list_tools_sync(self) -> list[types.Tool]:
@@ -464,10 +562,10 @@ class ContractRuntimeEngine:
 
         env = self._env()
         secret = env.get("SPIGOT_APPROVAL_SECRET", "")
-        if not secret:
+        if not secret or len(secret.strip()) < 16:
             return (
                 "Approval-required write operation is disabled because "
-                "SPIGOT_APPROVAL_SECRET authority is not configured."
+                "SPIGOT_APPROVAL_SECRET authority is not configured or has <16 characters."
             )
         token_raw = env.get("SPIGOT_ACTION_APPROVAL_TOKEN", "")
         if not token_raw:
@@ -525,11 +623,19 @@ class ContractRuntimeEngine:
             if str(token_data["action_digest"]) != expected_action_digest:
                 return "Action approval token action_digest mismatch."
 
-        ledger_file = env.get("SPIGOT_APPROVAL_LEDGER_PATH", "").strip()
+        ledger_file = (
+            env.get("SPIGOT_APPROVAL_LEDGER_PATH", "").strip()
+            or str(self.policy.get("approval_ledger_path", "")).strip()
+        )
+        if not ledger_file and not bool(
+            self.policy.get("allow_ephemeral_approval_ledger", False)
+        ):
+            ledger_file = str(Path.cwd() / ".spigot" / "consumed_approvals.sqlite3")
+
         if ledger_file:
             ledger_path = Path(ledger_file)
-            ledger_path.parent.mkdir(parents=True, exist_ok=True)
             try:
+                ledger_path.parent.mkdir(parents=True, exist_ok=True)
                 with sqlite3.connect(ledger_path) as conn:
                     conn.execute(
                         """
@@ -551,6 +657,8 @@ class ContractRuntimeEngine:
                     conn.commit()
             except sqlite3.IntegrityError:
                 return "Action approval token has already been consumed in ledger (replay denied)."
+            except (sqlite3.Error, OSError) as exc:
+                return f"Action approval ledger unavailable or unwritable (fail-closed): {exc}"
 
         self._consumed_approvals.add(nonce)
         return None
@@ -752,8 +860,9 @@ class ContractRuntimeEngine:
         )
 
         # 8. Validate final URL against network/domain policy
+        net_policy = self._effective_network_policy()
         try:
-            validate_url_against_policy(full_url, self.policy)
+            validate_url_against_policy(full_url, net_policy)
         except PermissionError as exc:
             emit_stderr_trace(
                 "egress_denied",
@@ -822,7 +931,9 @@ class ContractRuntimeEngine:
         max_attempts = max(1, max_retries_cfg) if can_retry else 1
 
         start_monotonic = time.monotonic()
-        response: httpx.Response | None = None
+        status_code: int | None = None
+        resp_headers: httpx.Headers | None = None
+        raw_content: bytes = b""
         attempts_made = 0
 
         async with self._concurrency_sem:
@@ -848,17 +959,67 @@ class ContractRuntimeEngine:
                     remaining_budget, connect=min(connect_timeout, remaining_budget)
                 )
                 try:
+                    transport = PinnedDNSAsyncTransport(net_policy)
                     async with httpx.AsyncClient(
                         timeout=attempt_timeout,
                         trust_env=False,
                         follow_redirects=False,
+                        transport=transport,
                     ) as client:
-                        response = await client.request(
+                        async with client.stream(
                             method=str(op["method"]),
                             url=full_url,
                             json=json_body,
                             headers=req_headers,
-                        )
+                        ) as response:
+                            status_code = response.status_code
+                            resp_headers = response.headers
+                            cl_raw = response.headers.get("Content-Length", "").strip()
+                            if cl_raw.isdigit() and int(cl_raw) > max_bytes:
+                                return make_error_call_result(
+                                    "UPSTREAM_FAILED",
+                                    (
+                                        f"Response from '{op_id}' ({cl_raw} bytes) exceeded "
+                                        f"max_response_bytes budget ({max_bytes} bytes)."
+                                    ),
+                                    stage="response_bounds",
+                                    operation_id=op_id,
+                                    retryable=False,
+                                    secrets_to_scrub=secrets_list,
+                                )
+
+                            chunks: list[bytes] = []
+                            received_bytes = 0
+                            async for chunk in response.aiter_bytes():
+                                received_bytes += len(chunk)
+                                if received_bytes > max_bytes:
+                                    return make_error_call_result(
+                                        "UPSTREAM_FAILED",
+                                        (
+                                            f"Response from '{op_id}' ({received_bytes} bytes) exceeded "
+                                            f"max_response_bytes budget ({max_bytes} bytes)."
+                                        ),
+                                        stage="response_bounds",
+                                        operation_id=op_id,
+                                        retryable=False,
+                                        secrets_to_scrub=secrets_list,
+                                    )
+                                chunks.append(chunk)
+                            raw_content = b"".join(chunks)
+                except PermissionError as exc:
+                    emit_stderr_trace(
+                        "egress_denied",
+                        secrets_to_scrub=secrets_list,
+                        operation_id=op_id,
+                        url=full_url,
+                    )
+                    return make_error_call_result(
+                        "POLICY_DENIED",
+                        str(exc),
+                        stage="network_policy",
+                        operation_id=op_id,
+                        secrets_to_scrub=secrets_list,
+                    )
                 except httpx.HTTPError as exc:
                     self._record_upstream_failure(server_ref, cred_fp)
                     if can_retry and attempt < max_attempts:
@@ -884,12 +1045,12 @@ class ContractRuntimeEngine:
                         },
                     )
 
-                assert response is not None
-                if response.status_code in {429, 502, 503, 504}:
-                    if response.status_code >= 500:
+                assert status_code is not None and resp_headers is not None
+                if status_code in {429, 502, 503, 504}:
+                    if status_code >= 500:
                         self._record_upstream_failure(server_ref, cred_fp)
                     if can_retry and attempt < max_attempts:
-                        retry_after_raw = response.headers.get("Retry-After", "").strip()
+                        retry_after_raw = resp_headers.get("Retry-After", "").strip()
                         sleep_dur = backoff_base * (2 ** (attempt - 1))
                         if retry_after_raw:
                             try:
@@ -901,25 +1062,11 @@ class ContractRuntimeEngine:
                             continue
                 break
 
-        assert response is not None
-        if response.status_code < 500 and response.status_code != 429:
+        assert status_code is not None
+        if status_code < 500 and status_code != 429:
             self._record_upstream_success(server_ref, cred_fp)
 
-        raw_content = response.content
-        if len(raw_content) > max_bytes:
-            return make_error_call_result(
-                "UPSTREAM_FAILED",
-                (
-                    f"Response from '{op_id}' ({len(raw_content)} bytes) exceeded "
-                    f"max_response_bytes budget ({max_bytes} bytes)."
-                ),
-                stage="response_bounds",
-                operation_id=op_id,
-                retryable=False,
-                secrets_to_scrub=secrets_list,
-            )
-
-        if response.status_code == 429:
+        if status_code == 429:
             return make_error_call_result(
                 "UPSTREAM_RATE_LIMITED",
                 f"Upstream rate limit (HTTP 429) on '{op_id}'.",
@@ -933,7 +1080,7 @@ class ContractRuntimeEngine:
         parsed_body: Any = None
         if raw_content:
             try:
-                parsed_body = response.json()
+                parsed_body = json.loads(raw_content.decode("utf-8"))
             except ValueError:
                 parsed_body = {
                     "raw_text": redact_secrets(
@@ -941,18 +1088,18 @@ class ContractRuntimeEngine:
                     )
                 }
 
-        is_http_err = response.status_code >= 400
+        is_http_err = status_code >= 400
         emit_stderr_trace(
             "tool_completed",
             secrets_to_scrub=secrets_list,
             operation_id=op_id,
-            status_code=response.status_code,
+            status_code=status_code,
             attempts=attempts_made,
             is_error=is_http_err,
         )
         result_envelope = {
             "operation_id": op_id,
-            "status_code": response.status_code,
+            "status_code": status_code,
             "attempts": attempts_made,
             "data": parsed_body,
         }

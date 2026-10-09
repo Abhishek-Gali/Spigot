@@ -487,7 +487,7 @@ async def test_t23_trusted_approval_authority_binding_ledger_and_self_approval_p
         cli_out = json.loads(capsys.readouterr().out)
         assert cli_out["action_digest"] == prepared.action_digest
 
-        # Issue single-use token via Local API owner endpoint
+        # Issue single-use token via Local API owner endpoint (backed by frozen contract & ToolPlan)
         cfg = LocalApiConfig(
             workspace_dir=tmp_path / "api_ws",
             capability_token="owner-cap-token-p5",
@@ -497,13 +497,52 @@ async def test_t23_trusted_approval_authority_binding_ledger_and_self_approval_p
         with TestClient(app, base_url="http://127.0.0.1:8000") as http_client:
             api_client = SpigotApiClient(http_client, capability_token="owner-cap-token-p5")
             proj = api_client.create_project("Approval Test Project")
+            api_client.upload_sources(
+                proj["project_id"],
+                [
+                    (
+                        "transfers_api.md",
+                        (
+                            f"# Transfers Service API\n\n"
+                            f"Base URL: `{oracle.base_url}`\n\n"
+                            f"Authentication: Send `X-API-Key: <your-api-key>` on every HTTP request.\n\n"
+                            f"## Execute Transfer\n\n"
+                            f"`POST /v1/transfers`\n\n"
+                            f"Execute a fund transfer.\n\n"
+                            f"### Request Body (`application/json`)\n\n"
+                            f"- `amount` (integer, required): Transfer amount.\n"
+                        ).encode(),
+                    )
+                ],
+            )
+            ext = api_client.extract_project(proj["project_id"])
+            frz = api_client.freeze_contract(
+                proj["project_id"], expected_revision=ext["result"]["revision"]
+            )
+            tp = api_client.create_tool_plan(
+                proj["project_id"],
+                contract_hash=frz["canonical_hash"],
+                policy_mode="approval_required",
+            )
+            c_hash = frz["canonical_hash"]
+            p_hash = tp["policy"]["policy_hash"]
+            contract["canonical_hash"] = c_hash
+            policy["policy_hash"] = p_hash
+
+            prepared = authority.prepare_action(
+                operation_id="post_v1_transfers",
+                arguments=valid_args,
+                target_url=target_url,
+                contract_hash=c_hash,
+                policy_hash=p_hash,
+            )
             prep_api = api_client.prepare_approval(
                 proj["project_id"],
                 operation_id="post_v1_transfers",
                 arguments=valid_args,
                 target_url=target_url,
-                contract_hash="a" * 64,
-                policy_hash="b" * 64,
+                contract_hash=c_hash,
+                policy_hash=p_hash,
             )
             assert prep_api["action_digest"] == prepared.action_digest
 
@@ -512,8 +551,8 @@ async def test_t23_trusted_approval_authority_binding_ledger_and_self_approval_p
                 operation_id="post_v1_transfers",
                 arguments=valid_args,
                 target_url=target_url,
-                contract_hash="a" * 64,
-                policy_hash="b" * 64,
+                contract_hash=c_hash,
+                policy_hash=p_hash,
                 ttl_sec=120.0,
             )
             token_json = issued_api["approval_token_json"]
@@ -575,8 +614,8 @@ async def test_t23_trusted_approval_authority_binding_ledger_and_self_approval_p
             operation_id="post_v1_transfers",
             arguments=valid_args,
             target_url=target_url,
-            contract_hash="a" * 64,
-            policy_hash="b" * 64,
+            contract_hash=c_hash,
+            policy_hash=p_hash,
             ttl_sec=-10.0,
         )
         expired_engine = ContractRuntimeEngine(
@@ -586,6 +625,7 @@ async def test_t23_trusted_approval_authority_binding_ledger_and_self_approval_p
             environ={
                 "SPIGOT_APPROVAL_SECRET": owner_secret,
                 "SPIGOT_ACTION_APPROVAL_TOKEN": expired_token,
+                "SPIGOT_APPROVAL_LEDGER_PATH": str(ledger_path),
             },
         )
         exp_res = await expired_engine.call_tool_async("post_v1_transfers", valid_args)

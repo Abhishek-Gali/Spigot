@@ -451,6 +451,7 @@ def _issue_approval_token(
 async def test_runtime_policy_modes_and_secret_redaction_and_approval_binding(
     orders_oracle: OrdersMockOracle,
     monkeypatch,
+    tmp_path: Path,
 ) -> None:
     contract = _build_orders_contract(orders_oracle.base_url)
 
@@ -519,6 +520,9 @@ async def test_runtime_policy_modes_and_secret_redaction_and_approval_binding(
     # 3. Approval-required mode: prepare/approve/execute binding
     approval_secret = "owner-hmac-signing-key-321"
     monkeypatch.setenv("SPIGOT_APPROVAL_SECRET", approval_secret)
+    monkeypatch.setenv(
+        "SPIGOT_APPROVAL_LEDGER_PATH", str(tmp_path / "p2_approvals_ledger.sqlite3")
+    )
     ap_policy = RuntimePolicy(
         id="pol-ap-1",
         mode="approval_required",

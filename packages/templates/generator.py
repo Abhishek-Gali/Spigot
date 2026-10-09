@@ -39,7 +39,7 @@ RUNTIME_VERSION = "0.2.0"
 MCP_SDK_PIN = "2.3.0"
 HTTPX_PIN = "0.28.1"
 JSONSCHEMA_PIN = "4.26.0"
-PYDANTIC_PIN = "2.13.0"
+PYDANTIC_PIN = "2.14.0"
 
 FIXED_ZIP_DATETIME = (2026, 1, 1, 0, 0, 0)
 
@@ -159,6 +159,18 @@ def _render_env_example(contract: ApiContract) -> str:
             f"# Credential for security scheme '{scheme.scheme_id}' (type: {scheme.type})"
         )
         lines.append(f"{env_name}=")
+    lines.extend(
+        [
+            "",
+            "# Action Approval Authority (required when policy mode is 'approval_required')",
+            "# Shared HMAC secret (>=16 chars) used to verify owner-signed single-use tokens",
+            "SPIGOT_APPROVAL_SECRET=",
+            "# Persistent SQLite ledger path for atomic single-use nonce replay protection",
+            "SPIGOT_APPROVAL_LEDGER_PATH=.spigot/consumed_approvals.sqlite3",
+            "# Per-invocation single-use owner approval token JSON (when executing an approved write)",
+            "SPIGOT_ACTION_APPROVAL_TOKEN=",
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 
@@ -426,16 +438,56 @@ def generate_server_package(
         dependency_lock_hash=dependency_lock_hash,
     )
     _write_canonical_json(output_dir / "manifest.json", manifest.model_dump(mode="json"))
+
+    # Remove any unmanifested stale files from output_dir
+    expected_rel_paths = set(sorted_artifact_hashes.keys()) | {"manifest.json"}
+    for existing_file in list(output_dir.rglob("*")):
+        if existing_file.is_file():
+            rel_posix = existing_file.relative_to(output_dir).as_posix()
+            if rel_posix not in expected_rel_paths:
+                existing_file.unlink()
+
     return manifest
 
 
 def export_reproducible_zip(package_dir: Path, zip_path: Path) -> bytes:
-    """Create a byte-for-byte reproducible `.zip` archive from a generated package directory."""
+    """Create a byte-for-byte reproducible `.zip` archive from a generated package directory.
+
+    If `manifest.json` is present in `package_dir`, strictly enforces that only manifested
+    files (plus `manifest.json`) exist in `package_dir` and that every file matches its
+    manifested SHA-256 digest before archiving.
+    """
     zip_path.parent.mkdir(parents=True, exist_ok=True)
     all_files = sorted(
         (p for p in package_dir.rglob("*") if p.is_file()),
         key=lambda p: p.relative_to(package_dir).as_posix(),
     )
+
+    manifest_file = package_dir / "manifest.json"
+    if manifest_file.exists():
+        manifest = GenerationManifest.model_validate_json(
+            manifest_file.read_text(encoding="utf-8")
+        )
+        allowed_paths = set(manifest.artifact_hashes.keys()) | {"manifest.json"}
+        actual_paths = {
+            p.relative_to(package_dir).as_posix() for p in all_files
+        }
+        unmanifested = sorted(actual_paths - allowed_paths)
+        if unmanifested:
+            raise ValueError(
+                f"Refusing to export ZIP containing unmanifested files: {unmanifested}"
+            )
+        missing = sorted(set(manifest.artifact_hashes.keys()) - actual_paths)
+        if missing:
+            raise ValueError(
+                f"Refusing to export ZIP missing manifested files: {missing}"
+            )
+        for rel_posix, expected_sha in manifest.artifact_hashes.items():
+            actual_sha = sha256_hex((package_dir / rel_posix).read_bytes())
+            if actual_sha != expected_sha:
+                raise ValueError(
+                    f"Refusing to export ZIP: hash mismatch for '{rel_posix}'"
+                )
 
     with zipfile.ZipFile(zip_path, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         for file_path in all_files:

@@ -73,7 +73,10 @@ ALLOWED_LOOPBACK_HOSTS = frozenset(
         "testserver",
     }
 )
-MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MiB
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MiB per file
+MAX_TOTAL_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MiB aggregate per request
+MAX_UPLOAD_FILES = 20
+UPLOAD_READ_CHUNK_BYTES = 64 * 1024  # 64 KiB streaming read chunk
 
 
 @dataclass
@@ -599,19 +602,49 @@ def create_local_app(
         existing_sources = storage.list_source_documents(project_id)
         raw_items: list[tuple[str, bytes, str | None]] = []
 
+        cl_header = request.headers.get("content-length", "").strip()
+        if cl_header.isdigit() and int(cl_header) > MAX_TOTAL_UPLOAD_BYTES:
+            return _error_response(
+                413,
+                "DOCUMENT_UNREADABLE",
+                f"Upload request Content-Length exceeds aggregate maximum ({MAX_TOTAL_UPLOAD_BYTES} bytes).",
+                "upload_sources",
+            )
+
         content_type = request.headers.get("content-type", "").lower()
         if "application/json" in content_type:
-            body_bytes = await request.body()
-            if len(body_bytes) > MAX_UPLOAD_BYTES:
+            body_chunks: list[bytes] = []
+            body_received = 0
+            async for chunk in request.stream():
+                body_received += len(chunk)
+                if body_received > MAX_UPLOAD_BYTES:
+                    return _error_response(
+                        413,
+                        "DOCUMENT_UNREADABLE",
+                        f"Upload payload exceeds maximum size ({MAX_UPLOAD_BYTES} bytes).",
+                        "upload_sources",
+                    )
+                body_chunks.append(chunk)
+            body_bytes = b"".join(body_chunks)
+            parsed_req = UploadSourcesJsonRequest.model_validate_json(body_bytes)
+            if len(parsed_req.files) > MAX_UPLOAD_FILES:
                 return _error_response(
                     413,
                     "DOCUMENT_UNREADABLE",
-                    f"Upload payload exceeds maximum size ({MAX_UPLOAD_BYTES} bytes).",
+                    f"Upload request exceeds maximum file count ({MAX_UPLOAD_FILES}).",
                     "upload_sources",
                 )
-            parsed_req = UploadSourcesJsonRequest.model_validate_json(body_bytes)
+            aggregate_bytes = 0
             for item in parsed_req.files:
                 if item.content_base64 is not None:
+                    # Reject oversized base64 string before decoding into memory
+                    if len(item.content_base64) > ((MAX_UPLOAD_BYTES * 4) // 3) + 64:
+                        return _error_response(
+                            413,
+                            "DOCUMENT_UNREADABLE",
+                            f"File '{item.filename}' exceeds maximum size ({MAX_UPLOAD_BYTES} bytes).",
+                            "upload_sources",
+                        )
                     data = base64.b64decode(item.content_base64)
                 elif item.content_text is not None:
                     data = item.content_text.encode("utf-8")
@@ -629,18 +662,49 @@ def create_local_app(
                         f"File '{item.filename}' exceeds maximum size ({MAX_UPLOAD_BYTES} bytes).",
                         "upload_sources",
                     )
-                raw_items.append((item.filename, data, item.license_note))
-        elif files:
-            for uf in files:
-                data = await uf.read()
-                if len(data) > MAX_UPLOAD_BYTES:
+                aggregate_bytes += len(data)
+                if aggregate_bytes > MAX_TOTAL_UPLOAD_BYTES:
                     return _error_response(
                         413,
                         "DOCUMENT_UNREADABLE",
-                        f"File '{uf.filename}' exceeds maximum size ({MAX_UPLOAD_BYTES} bytes).",
+                        f"Total upload size exceeds aggregate maximum ({MAX_TOTAL_UPLOAD_BYTES} bytes).",
                         "upload_sources",
                     )
-                raw_items.append((uf.filename or "document.md", data, None))
+                raw_items.append((item.filename, data, item.license_note))
+        elif files:
+            if len(files) > MAX_UPLOAD_FILES:
+                return _error_response(
+                    413,
+                    "DOCUMENT_UNREADABLE",
+                    f"Multipart upload exceeds maximum file count ({MAX_UPLOAD_FILES}).",
+                    "upload_sources",
+                )
+            aggregate_bytes = 0
+            for uf in files:
+                file_chunks: list[bytes] = []
+                file_bytes = 0
+                while True:
+                    chunk = await uf.read(UPLOAD_READ_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    file_bytes += len(chunk)
+                    aggregate_bytes += len(chunk)
+                    if file_bytes > MAX_UPLOAD_BYTES:
+                        return _error_response(
+                            413,
+                            "DOCUMENT_UNREADABLE",
+                            f"File '{uf.filename}' exceeds maximum size ({MAX_UPLOAD_BYTES} bytes).",
+                            "upload_sources",
+                        )
+                    if aggregate_bytes > MAX_TOTAL_UPLOAD_BYTES:
+                        return _error_response(
+                            413,
+                            "DOCUMENT_UNREADABLE",
+                            f"Multipart upload exceeds aggregate maximum ({MAX_TOTAL_UPLOAD_BYTES} bytes).",
+                            "upload_sources",
+                        )
+                    file_chunks.append(chunk)
+                raw_items.append((uf.filename or "document.md", b"".join(file_chunks), None))
         else:
             return _error_response(
                 400,
@@ -1596,19 +1660,104 @@ def create_local_app(
             },
         )
 
-    @app.post("/api/projects/{project_id}/approvals/prepare")
-    async def prepare_action_approval(
-        project_id: str, req: ApprovalActionRequest
-    ) -> Response:
-        try:
-            storage.get_project(project_id)
-        except KeyError:
+    def _validate_approval_against_project(
+        project_id: str, req: ApprovalActionRequest, stage: str
+    ) -> Response | None:
+        proj = storage.get_project(project_id)
+        if proj is None:
             return _error_response(
                 404,
                 "CONTRACT_INCOMPLETE",
                 f"Project '{project_id}' not found.",
-                "prepare_approval",
+                stage,
             )
+        try:
+            contract, is_frozen = storage.get_contract_revision(project_id)
+        except KeyError:
+            return _error_response(
+                409,
+                "CONTRACT_INCOMPLETE",
+                f"Project '{project_id}' has no frozen contract.",
+                stage,
+            )
+        if not is_frozen:
+            return _error_response(
+                409,
+                "CONTRACT_INCOMPLETE",
+                f"Contract for project '{project_id}' must be frozen before issuing action approvals.",
+                stage,
+            )
+        if req.contract_hash != contract.canonical_hash:
+            return _error_response(
+                409,
+                "REVISION_CONFLICT",
+                (
+                    f"Approval contract_hash '{req.contract_hash}' does not match "
+                    f"project frozen contract hash '{contract.canonical_hash}'."
+                ),
+                stage,
+            )
+        plan = storage.get_latest_tool_plan(project_id)
+        if plan is None or plan.contract_hash != contract.canonical_hash:
+            return _error_response(
+                409,
+                "CONTRACT_INCOMPLETE",
+                f"No active ToolPlan exists for frozen contract '{contract.canonical_hash}'.",
+                stage,
+            )
+        if req.policy_hash != plan.policy_hash:
+            return _error_response(
+                409,
+                "REVISION_CONFLICT",
+                (
+                    f"Approval policy_hash '{req.policy_hash}' does not match "
+                    f"active ToolPlan policy_hash '{plan.policy_hash}'."
+                ),
+                stage,
+            )
+        if req.operation_id not in set(plan.operation_ids):
+            return _error_response(
+                403,
+                "POLICY_DENIED",
+                f"Operation '{req.operation_id}' is not enabled in the project's active ToolPlan.",
+                stage,
+            )
+        matched_op = next(
+            (op for op in contract.operations if op.stable_id == req.operation_id),
+            None,
+        )
+        if matched_op is None or matched_op.support_status != "supported":
+            return _error_response(
+                403,
+                "POLICY_DENIED",
+                f"Operation '{req.operation_id}' is not a supported operation in the frozen contract.",
+                stage,
+            )
+        servers_by_id = {s.server_id: s.base_url.rstrip("/") for s in contract.servers}
+        expected_base = servers_by_id.get(matched_op.server_ref, "")
+        if not expected_base or not (
+            req.target_url == expected_base or req.target_url.startswith(expected_base + "/")
+        ):
+            return _error_response(
+                403,
+                "POLICY_DENIED",
+                (
+                    f"Approval target_url '{req.target_url}' does not match "
+                    f"contract server base_url '{expected_base}'."
+                ),
+                stage,
+            )
+        return None
+
+    @app.post("/api/projects/{project_id}/approvals/prepare")
+    async def prepare_action_approval(
+        project_id: str, req: ApprovalActionRequest
+    ) -> Response:
+        validation_err = _validate_approval_against_project(
+            project_id, req, "prepare_approval"
+        )
+        if validation_err is not None:
+            return validation_err
         action_digest = compute_action_digest(
             operation_id=req.operation_id,
             arguments=req.arguments,
@@ -1633,15 +1782,11 @@ def create_local_app(
     async def issue_action_approval(
         project_id: str, req: ApprovalActionRequest
     ) -> Response:
-        try:
-            storage.get_project(project_id)
-        except KeyError:
-            return _error_response(
-                404,
-                "CONTRACT_INCOMPLETE",
-                f"Project '{project_id}' not found.",
-                "issue_approval",
-            )
+        validation_err = _validate_approval_against_project(
+            project_id, req, "issue_approval"
+        )
+        if validation_err is not None:
+            return validation_err
         authority = ApprovalAuthority(config.approval_secret)
         token = authority.issue_token(
             operation_id=req.operation_id,

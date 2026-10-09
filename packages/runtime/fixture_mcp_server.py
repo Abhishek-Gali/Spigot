@@ -159,6 +159,7 @@ def create_fixture_mcp_server(
         else os.environ.get("SPIGOT_ALLOW_WRITES", "false").lower() == "true"
     )
     guard = network_guard or NetworkPolicyGuard(profile=NetworkProfile.STRICT_OFFLINE)
+    guard.register_loopback_url(resolved_base_url)
 
     async def handle_list_tools(
         ctx: ServerRequestContext[Any],

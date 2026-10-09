@@ -43,8 +43,13 @@ def test_socket_guard_blocks_outbound_connect_while_allowing_loopback_mock() -> 
         with pytest.raises(EgressDeniedError):
             socket.create_connection(("169.254.169.254", 80), timeout=1.0)
 
-        # Loopback mock server communication must succeed under STRICT_OFFLINE socket guard
+        # Unregistered local loopback port must be blocked by default in STRICT_OFFLINE
+        with pytest.raises(EgressDeniedError):
+            guard.validate_url("http://127.0.0.1:6379/internal-redis")
+
+        # Loopback mock server communication must succeed once its port is explicitly registered
         with SupportTicketsMockServer(expected_bearer_token="offline-token") as mock:
+            guard.register_loopback_url(mock.base_url)
             with httpx.Client(timeout=5.0, trust_env=False) as client:
                 resp = client.get(
                     f"{mock.base_url}/tickets/tkt_101",
@@ -55,5 +60,5 @@ def test_socket_guard_blocks_outbound_connect_while_allowing_loopback_mock() -> 
 
     denied = [a for a in guard.attempts if not a.allowed]
     allowed = [a for a in guard.attempts if a.allowed]
-    assert len(denied) >= 2
+    assert len(denied) >= 3
     assert len(allowed) >= 1

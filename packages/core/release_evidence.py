@@ -370,6 +370,7 @@ def run_flagship_demo_rehearsal(
     with DisposableEvalOracle() as oracle:
         base_url = oracle.base_url
         net_guard = NetworkPolicyGuard(profile=NetworkProfile.STRICT_OFFLINE)
+        net_guard.register_loopback_url(base_url)
 
         with net_guard.enforce_socket_guard():
             # -----------------------------------------------------------------

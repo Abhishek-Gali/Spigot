@@ -151,9 +151,9 @@ class ApprovalAuthority:
         ledger_path: Path | None = None,
         default_ttl_sec: float = 120.0,
     ) -> None:
-        if not secret or len(secret.strip()) < 8:
+        if not secret or len(secret.strip()) < 16:
             raise ValueError(
-                "ApprovalAuthority secret must be at least 8 characters long."
+                "ApprovalAuthority secret must be at least 16 characters long."
             )
         self._secret = secret
         self.default_ttl_sec = default_ttl_sec

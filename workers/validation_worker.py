@@ -265,7 +265,13 @@ def scrub_validation_env(
 
 
 class AstSafetyVisitor(ast.NodeVisitor):
-    """AST visitor that detects forbidden dynamic code execution or shell=True calls."""
+    """Defense-in-depth AST check on deterministic template output.
+
+    Note: The primary code-injection boundary is structural — `packages/templates/generator.py`
+    never interpolates untrusted strings into `.py` files (all contract/tool metadata is
+    serialized to inert JSON files and loaded via `json.loads`). This visitor provides a
+    secondary static check for direct calls to forbidden builtins/subprocess primitives.
+    """
 
     def __init__(self) -> None:
         self.violations: list[str] = []
@@ -410,6 +416,18 @@ class IsolatedValidationWorker:
         canaries = [c for c in (secret_canaries or []) if c and len(c) >= 4]
 
         # Layer 1: Manifest & Tamper Verification + AST Static Safety + Canary Scan
+        allowed_disk_paths = set(manifest.artifact_hashes.keys()) | {"manifest.json"}
+        if package_dir.exists():
+            for disk_file in sorted(package_dir.rglob("*")):
+                if disk_file.is_file():
+                    rel_disk = disk_file.relative_to(package_dir).as_posix()
+                    if rel_disk not in allowed_disk_paths:
+                        build_ok = False
+                        security_ok = False
+                        failure_reasons.append(
+                            f"Unmanifested file in package directory: {rel_disk}"
+                        )
+
         for rel_path, expected_sha in manifest.artifact_hashes.items():
             try:
                 f_path = resolve_within_sandbox_root(package_dir, rel_path)
@@ -450,25 +468,44 @@ class IsolatedValidationWorker:
                     static_ok = False
                     failure_reasons.append(f"AST syntax error in {rel_path}: {exc}")
 
-        # Verify ZIP archive integrity and member hashes if zip_bytes provided
+        # Verify ZIP archive integrity, strict manifest membership, and member hashes
         if zip_bytes is not None:
             try:
                 with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
                     if zf.testzip() is not None:
                         build_ok = False
                         failure_reasons.append("Corrupted ZIP archive entry.")
+                    seen_zip_members: set[str] = set()
                     for info in zf.infolist():
                         if info.filename.startswith("/") or ".." in Path(info.filename).parts:
                             build_ok = False
                             security_ok = False
                             failure_reasons.append(f"Unsafe ZIP member path: {info.filename}")
+                        if (
+                            info.filename != "manifest.json"
+                            and info.filename not in manifest.artifact_hashes
+                        ):
+                            build_ok = False
+                            security_ok = False
+                            failure_reasons.append(
+                                f"Unmanifested ZIP member: {info.filename}"
+                            )
                         if info.filename in manifest.artifact_hashes:
+                            seen_zip_members.add(info.filename)
                             member_sha = sha256_hex(zf.read(info.filename))
                             if member_sha != manifest.artifact_hashes[info.filename]:
                                 build_ok = False
                                 failure_reasons.append(
                                     f"ZIP member hash mismatch for {info.filename}"
                                 )
+                    missing_zip_members = sorted(
+                        set(manifest.artifact_hashes.keys()) - seen_zip_members
+                    )
+                    if missing_zip_members:
+                        build_ok = False
+                        failure_reasons.append(
+                            f"Missing manifested files in ZIP archive: {missing_zip_members}"
+                        )
             except Exception as exc:
                 build_ok = False
                 failure_reasons.append(f"ZIP verification failed: {exc}")

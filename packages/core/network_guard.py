@@ -16,6 +16,8 @@ from __future__ import annotations
 import contextlib
 import ipaddress
 import socket
+import sys
+import threading
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -49,15 +51,82 @@ class EgressAttemptRecord:
     profile: str
 
 
+_GUARD_LOCK = threading.RLock()
+_ACTIVE_GUARDS: list[NetworkPolicyGuard] = []
+_ORIG_CONNECT = socket.socket.connect
+_ORIG_CONNECT_EX = socket.socket.connect_ex
+_ORIG_CREATE_CONNECTION = socket.create_connection
+
+
+def _is_stdlib_socketpair_caller() -> bool:
+    """Detect Python stdlib `socket._fallback_socketpair` used by Windows asyncio self-pipe."""
+    try:
+        caller = sys._getframe(2)
+        return caller.f_code.co_name == "_fallback_socketpair"
+    except ValueError:
+        return False
+
+
+def _dispatch_guarded_connect(sock: socket.socket, address: Any) -> Any:
+    if isinstance(address, tuple) and len(address) >= 2 and not _is_stdlib_socketpair_caller():
+        host, port = str(address[0]), int(address[1])
+        with _GUARD_LOCK:
+            active = list(_ACTIVE_GUARDS)
+        for guard in active:
+            guard.validate_host_port(host, port)
+    return _ORIG_CONNECT(sock, address)
+
+
+def _dispatch_guarded_connect_ex(sock: socket.socket, address: Any) -> int:
+    if isinstance(address, tuple) and len(address) >= 2 and not _is_stdlib_socketpair_caller():
+        host, port = str(address[0]), int(address[1])
+        with _GUARD_LOCK:
+            active = list(_ACTIVE_GUARDS)
+        for guard in active:
+            guard.validate_host_port(host, port)
+    return _ORIG_CONNECT_EX(sock, address)
+
+
+def _dispatch_guarded_create_connection(
+    address: tuple[str, int], *args: Any, **kwargs: Any
+) -> socket.socket:
+    host, port = str(address[0]), int(address[1])
+    with _GUARD_LOCK:
+        active = list(_ACTIVE_GUARDS)
+    for guard in active:
+        guard.validate_host_port(host, port)
+    return _ORIG_CREATE_CONNECTION(address, *args, **kwargs)
+
+
 @dataclass
 class NetworkPolicyGuard:
     """Enforces loopback-only offline policy or explicit origin allowlists."""
 
     profile: NetworkProfile = NetworkProfile.STRICT_OFFLINE
     registered_loopback_ports: set[int] = field(default_factory=lambda: {11434})
-    allow_any_loopback_port: bool = True
+    allow_any_loopback_port: bool = False
     allowed_connected_origins: set[str] = field(default_factory=set)
     attempts: list[EgressAttemptRecord] = field(default_factory=list)
+
+    def register_loopback_port(self, port: int) -> None:
+        """Explicitly register an approved local loopback port (e.g. for a local mock oracle)."""
+        if port <= 0 or port > 65535:
+            raise ValueError(f"Invalid TCP port: {port}")
+        self.registered_loopback_ports.add(int(port))
+
+    def register_loopback_url(self, url: str) -> None:
+        """Extract and register the port from a loopback base URL."""
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").strip().lower().strip("[]")
+        port = parsed.port or (443 if (parsed.scheme or "").lower() == "https" else 80)
+        if host == "localhost":
+            self.register_loopback_port(port)
+            return
+        try:
+            if ipaddress.ip_address(host).is_loopback:
+                self.register_loopback_port(port)
+        except ValueError:
+            pass
 
     def _record(self, host: str, port: int | None, allowed: bool, reason: str) -> None:
         self.attempts.append(
@@ -199,37 +268,27 @@ class NetworkPolicyGuard:
 
     @contextlib.contextmanager
     def enforce_socket_guard(self) -> Iterator[NetworkPolicyGuard]:
-        """Context manager that hooks socket.socket.connect and socket.create_connection."""
-        orig_connect = socket.socket.connect
-        orig_connect_ex = socket.socket.connect_ex
-        orig_create_connection = socket.create_connection
-        guard = self
+        """Re-entrant context manager that hooks Python socket connection methods.
 
-        def guarded_connect(sock: socket.socket, address: Any) -> Any:
-            if isinstance(address, tuple) and len(address) >= 2:
-                host, port = str(address[0]), int(address[1])
-                guard.validate_host_port(host, port)
-            return orig_connect(sock, address)
-
-        def guarded_connect_ex(sock: socket.socket, address: Any) -> int:
-            if isinstance(address, tuple) and len(address) >= 2:
-                host, port = str(address[0]), int(address[1])
-                guard.validate_host_port(host, port)
-            return orig_connect_ex(sock, address)
-
-        def guarded_create_connection(
-            address: tuple[str, int], *args: Any, **kwargs: Any
-        ) -> socket.socket:
-            host, port = str(address[0]), int(address[1])
-            guard.validate_host_port(host, port)
-            return orig_create_connection(address, *args, **kwargs)
-
-        socket.socket.connect = guarded_connect  # type: ignore[method-assign]
-        socket.socket.connect_ex = guarded_connect_ex  # type: ignore[method-assign]
-        socket.create_connection = guarded_create_connection  # type: ignore[assignment]
+        Note: This is an in-process Python socket guard covering `socket.socket.connect`,
+        `socket.socket.connect_ex`, and `socket.create_connection`. It is a defense-in-depth
+        application control, not a substitute for an OS/container network namespace.
+        """
+        with _GUARD_LOCK:
+            _ACTIVE_GUARDS.append(self)
+            if len(_ACTIVE_GUARDS) == 1:
+                socket.socket.connect = _dispatch_guarded_connect  # type: ignore[method-assign]
+                socket.socket.connect_ex = _dispatch_guarded_connect_ex  # type: ignore[method-assign]
+                socket.create_connection = _dispatch_guarded_create_connection  # type: ignore[assignment]
         try:
             yield self
         finally:
-            socket.socket.connect = orig_connect  # type: ignore[method-assign]
-            socket.socket.connect_ex = orig_connect_ex  # type: ignore[method-assign]
-            socket.create_connection = orig_create_connection  # type: ignore[assignment]
+            with _GUARD_LOCK:
+                for idx in range(len(_ACTIVE_GUARDS) - 1, -1, -1):
+                    if _ACTIVE_GUARDS[idx] is self:
+                        _ACTIVE_GUARDS.pop(idx)
+                        break
+                if not _ACTIVE_GUARDS:
+                    socket.socket.connect = _ORIG_CONNECT  # type: ignore[method-assign]
+                    socket.socket.connect_ex = _ORIG_CONNECT_EX  # type: ignore[method-assign]
+                    socket.create_connection = _ORIG_CREATE_CONNECTION  # type: ignore[assignment]
