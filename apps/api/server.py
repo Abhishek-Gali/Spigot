@@ -48,6 +48,7 @@ from packages.core.extraction import (
 )
 from packages.core.jobs import JobCancelledError, JobCoordinator, JobRecord, JobStatus
 from packages.core.local_inference import OllamaInferenceAdapter
+from packages.core.openapi_normalizer import normalize_openapi_document
 from packages.core.parsers import parse_document_bytes
 from packages.core.planning import RuntimePolicy, create_tool_plan, suggest_tool_pack
 from packages.core.reconciliation import reconcile_bundles_to_contract
@@ -87,6 +88,9 @@ class LocalApiConfig:
     web_assets_dir: Path = field(
         default_factory=lambda: Path(__file__).resolve().parent.parent / "web"
     )
+    examples_dir: Path = field(
+        default_factory=lambda: Path(__file__).resolve().parent.parent.parent / "examples"
+    )
 
 
 class CreateProjectRequest(BaseModel):
@@ -94,6 +98,12 @@ class CreateProjectRequest(BaseModel):
 
     name: str = Field(min_length=1, max_length=120)
     network_profile: Literal["STRICT_OFFLINE", "CONNECTED_SERVICES"] | None = None
+
+
+class LoadExampleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    example_id: Literal["pdf", "markdown", "html", "openapi"]
 
 
 class InlineSourceItem(BaseModel):
@@ -675,6 +685,92 @@ def create_local_app(
             },
         )
 
+    def _clear_project_sources_internal(project_id: str) -> int:
+        with storage.connect() as conn:
+            conn.execute(
+                "DELETE FROM document_blocks WHERE project_id = ?",
+                (project_id,),
+            )
+            conn.execute(
+                "DELETE FROM source_documents WHERE project_id = ?",
+                (project_id,),
+            )
+        return storage.increment_project_revision(project_id)
+
+    @app.post("/api/projects/{project_id}/sources/clear")
+    async def clear_project_sources(project_id: str) -> Response:
+        proj = storage.get_project(project_id)
+        if proj is None:
+            return _error_response(
+                404,
+                "DOCUMENT_UNREADABLE",
+                f"Project '{project_id}' not found.",
+                "clear_sources",
+            )
+        new_rev = _clear_project_sources_internal(project_id)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "project_id": project_id,
+                "current_revision": new_rev,
+                "sources": [],
+                "message": "Cleared all project source documents and advanced revision.",
+            },
+        )
+
+    @app.post("/api/projects/{project_id}/load-example", status_code=201)
+    async def load_project_example(
+        project_id: str, req: LoadExampleRequest
+    ) -> Response:
+        proj = storage.get_project(project_id)
+        if proj is None:
+            return _error_response(
+                404,
+                "DOCUMENT_UNREADABLE",
+                f"Project '{project_id}' not found.",
+                "load_example",
+            )
+        example_map = {
+            "pdf": "01_payments_api_manual.pdf",
+            "markdown": "02_support_tickets_api.md",
+            "html": "03_incident_response_api.html",
+            "openapi": "04_inventory_openapi_3_0.yaml",
+        }
+        fname = example_map[req.example_id]
+        sample_path = (config.examples_dir / fname).resolve()
+        if not sample_path.exists():
+            return _error_response(
+                404,
+                "DOCUMENT_UNREADABLE",
+                f"Sample document '{fname}' not found in examples directory.",
+                "load_example",
+            )
+        data = sample_path.read_bytes()
+        new_rev = _clear_project_sources_internal(project_id)
+        src_id = f"src_{project_id}_001_{sha256_hex(data)[:8]}"
+        parsed_doc, blocks, parse_fnds = parse_document_bytes(
+            src_id, fname, data, project_id=project_id
+        )
+        saved_doc = storage.store_source_document(
+            project_id,
+            fname,
+            parsed_doc.media_type,
+            data,
+            source_id=src_id,
+            license_note="Spigot built-in sample API documentation",
+        )
+        storage.store_document_blocks(project_id, blocks)
+        return JSONResponse(
+            status_code=201,
+            content={
+                "project_id": project_id,
+                "current_revision": new_rev,
+                "source_ids": [saved_doc.id],
+                "sources": [saved_doc.model_dump()],
+                "intake_findings": [f.model_dump() for f in parse_fnds],
+            },
+        )
+
     @app.post("/api/projects/{project_id}/fetch")
     async def fetch_remote_documentation(
         project_id: str, req: FetchUrlRequest
@@ -738,6 +834,48 @@ def create_local_app(
                     error={"code": "DOCUMENT_UNREADABLE", "message": "No source documents in project."},
                 )
 
+            target_rev = int(proj["current_revision"])
+            try:
+                storage.get_contract_revision(project_id, target_rev)
+                target_rev += 1
+            except KeyError:
+                pass
+
+            # Check if single source is an OpenAPI 3.0 YAML/JSON specification
+            if len(selected_sources) == 1 and selected_sources[0].original_name.lower().endswith(
+                (".yaml", ".yml", ".json")
+            ):
+                src = selected_sources[0]
+                raw_bytes = storage.artifacts.get_bytes(src.content_sha256)
+                raw_text = raw_bytes.decode("utf-8", errors="replace")
+                contract, oa_blocks, all_evidence = normalize_openapi_document(
+                    raw_text,
+                    project_id=project_id,
+                    source_id=src.id,
+                    contract_id=f"cnt_{project_id}",
+                    revision=target_rev,
+                )
+                storage.store_document_blocks(project_id, oa_blocks)
+                storage.save_contract_revision(contract, is_frozen=False)
+                _save_evidence_registry(project_id, all_evidence)
+                open_blockers = [
+                    f for f in contract.findings if f.severity == "blocker" and f.status == "open"
+                ]
+                final_state = JobStatus.NEEDS_REVIEW if open_blockers else JobStatus.SUCCEEDED
+                return jobs.complete_job(
+                    job_id,
+                    worker_id,
+                    final_status=final_state,
+                    result={
+                        "contract_id": contract.id,
+                        "revision": contract.revision,
+                        "canonical_hash": contract.canonical_hash,
+                        "operation_count": len(contract.operations),
+                        "open_blocker_count": len(open_blockers),
+                        "extraction_mode": "openapi_normalizer",
+                    },
+                )
+
             bundles: list[DocumentExtractionBundle] = []
             total = len(selected_sources)
             for idx, src in enumerate(selected_sources, start=1):
@@ -762,13 +900,6 @@ def create_local_app(
                     stage=f"extracted_{src.original_name}",
                     progress_pct=prog,
                 )
-
-            target_rev = int(proj["current_revision"])
-            try:
-                storage.get_contract_revision(project_id, target_rev)
-                target_rev += 1
-            except KeyError:
-                pass
 
             contract, all_evidence = reconcile_bundles_to_contract(
                 bundles,

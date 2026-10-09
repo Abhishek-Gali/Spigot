@@ -56,6 +56,26 @@
           <div id="project-summary-box" class="meta-box">
             No project loaded yet.
           </div>
+
+          <h3>1-Click Sample API Docs (Try Instantly)</h3>
+          <p class="helper-text">
+            Click any built-in sample from <code>examples/</code> to create/reset a clean project,
+            import the sample, and extract its endpoints immediately:
+          </p>
+          <div class="button-row">
+            <button type="button" class="btn-secondary btn-load-example" data-example="pdf">
+              Load Sample PDF (Payments API)
+            </button>
+            <button type="button" class="btn-secondary btn-load-example" data-example="markdown">
+              Load Sample Markdown (Support Tickets)
+            </button>
+            <button type="button" class="btn-secondary btn-load-example" data-example="html">
+              Load Sample HTML (Incidents API)
+            </button>
+            <button type="button" class="btn-secondary btn-load-example" data-example="openapi">
+              Load Sample OpenAPI 3.0 (.yaml)
+            </button>
+          </div>
         </div>
 
         <div class="card">
@@ -70,6 +90,7 @@
             <input id="input-source-files" type="file" multiple accept=".md,.markdown,.txt,.html,.htm,.pdf,.yaml,.yml,.json" />
             <div class="button-row">
               <button type="submit" id="btn-upload-sources" class="btn-primary">Import Selected Files</button>
+              <button type="button" id="btn-clear-sources" class="btn-secondary">Clear Project Sources</button>
             </div>
           </form>
           <div class="url-disabled-notice" aria-disabled="true">
@@ -78,6 +99,48 @@
           </div>
           <h3>Imported Sources &amp; Intake Findings</h3>
           <ul id="source-list" class="item-list"></ul>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top: 1rem;">
+        <h2>What Kind of Documentation Does Spigot Need? (Valid vs. Blocked)</h2>
+        <div class="panel-grid">
+          <div>
+            <h3>✅ Valid Input: Concrete HTTP REST API Reference</h3>
+            <p class="helper-text">
+              Must document an actual HTTP service with a <strong>Base URL</strong>,
+              <strong>Authentication</strong>, and <strong>HTTP Verb + Path endpoints</strong>
+              (see <code>examples/01_payments_api_manual.pdf</code> or <code>examples/02_support_tickets_api.md</code>):
+            </p>
+            <pre class="code-viewer"># Acme Payments REST API (v1)
+Base URL: https://api.payments.internal
+Authentication: Send Authorization: Bearer &lt;token&gt; on all requests.
+
+## List Payment Charges
+GET /v1/charges
+- customer_id (query, string, optional): Filter by customer ID
+
+## Create Payment Charge
+POST /v1/charges
+- amount_cents (body, integer, required): Charge amount in cents
+- currency (body, string, required): ISO currency code</pre>
+          </div>
+          <div>
+            <h3>❌ Blocked Input (<code>NOT_API_DOCUMENTATION</code>)</h3>
+            <p class="helper-text">
+              Spigot fails closed instead of guessing endpoints when given non-endpoint documents:
+            </p>
+            <pre class="code-viewer">1. Framework / Standard Metaschemas:
+   e.g. microprofile-openapi-spec-4.0-RC3.pdf
+   (Documents Java @Operation annotations, not a live HTTP server's endpoints)
+
+2. Language Client SDK Manuals:
+   e.g. docs-python-telegram-bot.pdf
+   (Documents Python classes like bot.send_message() without HTTP verbs/URLs)
+
+3. Marketing / Conceptual Overview Pages:
+   e.g. "About OpenAPI" articles with no Base URL or endpoint definitions</pre>
+          </div>
         </div>
       </div>
     </section>

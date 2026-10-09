@@ -82,7 +82,14 @@ flowchart LR
 
 | Good Inputs (Supported) | What Spigot Needs Inside the Doc | Inputs That Fail Closed (By Design) |
 |---|---|---|
-| **OpenAPI 3.0** (`.json`, `.yaml`, `.yml`)<br/>**REST API Markdown/Text** (`.md`, `.txt`)<br/>**Saved HTML API Docs** (`.html`)<br/>**Text-Layer REST API PDFs** (`.pdf`)<br/>**Multi-File Bundles** (`auth.md` + `api.pdf`) | 1. **Base URL** (e.g., `https://api.example.com/v1`)<br/>2. **HTTP Verb + Path** (`GET /v1/users/{id}`)<br/>3. **Auth Scheme** (`Bearer`, `X-API-Key`, or `Public`)<br/>4. **Parameters / JSON Body fields**<br/>*(Any missing item can be supplied via Review Overrides)* | **Language SDK manuals** (e.g., Python/JS class docs with no HTTP methods/URLs)<br/>**Marketing / overview blog posts** with no concrete endpoints<br/>**Scanned image-only PDFs** (`OCR_REQUIRED`)<br/>**Non-REST protocols** (GraphQL, gRPC, WebSockets) |
+| **OpenAPI 3.0** (`.json`, `.yaml`, `.yml`)<br/>**REST API Markdown/Text** (`.md`, `.txt`)<br/>**Saved HTML API Docs** (`.html`)<br/>**Text-Layer REST API PDFs** (`.pdf`)<br/>**Multi-File Bundles** (`auth.md` + `api.pdf`) | 1. **Base URL** (e.g., `https://api.example.com/v1`)<br/>2. **HTTP Verb + Path** (`GET /v1/users/{id}`)<br/>3. **Auth Scheme** (`Bearer`, `X-API-Key`, or `Public`)<br/>4. **Parameters / JSON Body fields**<br/>*(Any missing item can be supplied via Review Overrides)* | **Framework / Specification Metaschemas** (e.g., `microprofile-openapi-spec.pdf` documenting Java `@Operation` annotations)<br/>**Language SDK manuals** (e.g., Python/JS class docs with no HTTP methods/URLs)<br/>**Marketing / overview blog posts** with no concrete endpoints<br/>**Scanned image-only PDFs** (`OCR_REQUIRED`) |
+
+### Ready-to-Try Sample Files in [`examples/`](examples/README.md)
+You can upload any of these files in the Web Studio—or click the **1-Click Sample API Docs** buttons right inside Step 1 of `http://127.0.0.1:8000`:
+- **PDF REST API Manual:** [`examples/01_payments_api_manual.pdf`](examples/01_payments_api_manual.pdf) (*Acme Payments & Refunds API* — 4 endpoints)
+- **Markdown REST API Manual:** [`examples/02_support_tickets_api.md`](examples/02_support_tickets_api.md) (*Customer Support Tickets API* — 4 endpoints)
+- **Saved HTML API Reference:** [`examples/03_incident_response_api.html`](examples/03_incident_response_api.html) (*Cloud Incident Response API* — 3 endpoints)
+- **OpenAPI 3.0 YAML Spec:** [`examples/04_inventory_openapi_3_0.yaml`](examples/04_inventory_openapi_3_0.yaml) (*Warehouse Inventory API* — 3 endpoints)
 
 ---
 
@@ -94,7 +101,7 @@ Launch the local single-owner studio server ([`apps/api/server.py`](apps/api/ser
 .\.venv\Scripts\uvicorn.exe apps.api.server:create_local_app --factory --host 127.0.0.1 --port 8000
 ```
 Open **`http://127.0.0.1:8000`** in your browser to walk through the 5-step studio workflow:
-1. **Import Documentation Bundle:** Upload `.md`, `.txt`, `.html`, `.pdf`, `.json`, or `.yaml` files.
+1. **Import Documentation Bundle (or 1-Click Sample):** Click any of the **1-Click Sample API Docs** buttons (`PDF`, `Markdown`, `HTML`, `OpenAPI 3.0`) or upload your own files from [`examples/`](examples/README.md).
 2. **Inspect Evidence:** Review extracted endpoints alongside exact source quotes and page/line numbers.
 3. **Review & Resolve:** Supply audited owner overrides for any missing/ambiguous fields and freeze the contract.
 4. **Tool Pack & Policy:** Select a dependency-preserving tool pack and runtime policy (`read_only`, `restricted_write`, `approval_required`).

@@ -101,7 +101,7 @@
       if (proj.contract) {
         state.contractHash = proj.contract.canonical_hash;
         renderOperationsChecklist(proj.contract);
-        await loadFindings();
+        await loadFindings(proj.contract);
       }
 
       if (proj.tool_plan) {
@@ -128,11 +128,32 @@
     }
   }
 
-  async function loadFindings() {
+  async function loadFindings(contract) {
     if (!state.projectId) return;
     const res = await apiFetch(`/api/projects/${state.projectId}/findings`);
     const container = document.getElementById("findings-list");
     container.textContent = "";
+    const ops = (contract && contract.operations) || [];
+    if ((!res.findings || res.findings.length === 0) && ops.length > 0) {
+      const okBanner = document.createElement("div");
+      okBanner.className = "item-row resolved";
+      okBanner.textContent = `✅ 0 Open Blockers — ${ops.length} supported endpoint(s) extracted cleanly! Click "Freeze Contract Revision" on the right to proceed to Step 4.`;
+      container.appendChild(okBanner);
+      ops.forEach((op) => {
+        const opRow = document.createElement("div");
+        opRow.className = "item-row";
+        opRow.tabIndex = 0;
+        const paramNames = (op.parameters || []).map((p) => `${p.external_name} (${p.location})`).join(", ");
+        opRow.textContent = `[READY] ${op.method} ${op.relative_path} (${op.stable_id}) — Auth: ${op.security_requirement.status} — Params: ${paramNames || "none"}`;
+        opRow.addEventListener("click", () => {
+          document.getElementById("input-override-op").value = op.stable_id;
+          document.getElementById("evidence-viewer").textContent =
+            `Operation: ${op.display_name} (${op.stable_id})\nMethod & Path: ${op.method} ${op.relative_path}\nSemantic Effect: ${op.semantic_effect}\nAuth Status: ${op.security_requirement.status}\nParameters: ${JSON.stringify(op.parameters || [], null, 2)}\nRequest Body: ${JSON.stringify(op.request_body || null, null, 2)}`;
+        });
+        container.appendChild(opRow);
+      });
+      return;
+    }
     if (!res.findings || res.findings.length === 0) {
       container.textContent = "No findings recorded.";
       return;
@@ -211,6 +232,58 @@
       showAlert(err.message);
     }
   });
+
+  document.querySelectorAll(".btn-load-example").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      showAlert("");
+      const exampleId = btn.dataset.example;
+      try {
+        if (!state.projectId) {
+          const proj = await apiFetch("/api/projects", {
+            method: "POST",
+            json: { name: `Sample (${exampleId.toUpperCase()}) Project` },
+          });
+          state.projectId = proj.project_id;
+          window.localStorage.setItem("spigot_active_project_id", state.projectId);
+        }
+        await apiFetch(`/api/projects/${state.projectId}/load-example`, {
+          method: "POST",
+          json: { example_id: exampleId },
+        });
+        const job = await apiFetch(`/api/projects/${state.projectId}/extract`, {
+          method: "POST",
+          json: { use_local_model: false },
+        });
+        state.activeJobId = job.job_id;
+        await refreshProject();
+        switchTab("step-review");
+      } catch (err) {
+        showAlert(err.message);
+      }
+    });
+  });
+
+  const btnClearSources = document.getElementById("btn-clear-sources");
+  if (btnClearSources) {
+    btnClearSources.addEventListener("click", async () => {
+      showAlert("");
+      if (!state.projectId) {
+        showAlert("No active project to clear.");
+        return;
+      }
+      try {
+        await apiFetch(`/api/projects/${state.projectId}/sources/clear`, {
+          method: "POST",
+          json: {},
+        });
+        document.getElementById("findings-list").textContent = "";
+        document.getElementById("operations-checklist").textContent = "";
+        await refreshProject();
+      } catch (err) {
+        showAlert(err.message);
+      }
+    });
+  }
 
   document.getElementById("form-upload-sources").addEventListener("submit", async (e) => {
     e.preventDefault();

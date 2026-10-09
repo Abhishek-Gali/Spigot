@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Cloud Incident Response REST API Reference</title>
+</head>
+<body>
+  <main>
+    <h1>Cloud Incident Response REST API</h1>
+    <p>Base URL: <code>https://api.incidents.internal</code></p>
+    <p>Authentication: Send <code>Authorization: Bearer &lt;token&gt;</code> on all requests.</p>
+
+    <h2>List Active Incidents</h2>
+    <p><code>GET /v1/incidents</code></p>
+    <table>
+      <thead>
+        <tr><th>Parameter</th><th>Location</th><th>Type</th><th>Required</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>severity</td><td>query</td><td>string</td><td>no</td><td>Filter by severity (sev1, sev2, sev3)</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Get Incident Details</h2>
+    <p><code>GET /v1/incidents/{incident_id}</code></p>
+    <table>
+      <thead>
+        <tr><th>Parameter</th><th>Location</th><th>Type</th><th>Required</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>incident_id</td><td>path</td><td>string</td><td>yes</td><td>Unique incident identifier</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Declare New Incident</h2>
+    <p><code>POST /v1/incidents</code></p>
+    <table>
+      <thead>
+        <tr><th>Field</th><th>Location</th><th>Type</th><th>Required</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>title</td><td>body</td><td>string</td><td>yes</td><td>Incident title</td></tr>
+        <tr><td>service</td><td>body</td><td>string</td><td>yes</td><td>Affected service slug</td></tr>
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>
