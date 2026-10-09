@@ -294,18 +294,19 @@ def _parse_parameters_and_body_from_section_blocks(
                     or row_map.get("field")
                     or cells[0]
                 ).strip("` ")
-                if not p_name or p_name.lower() in {
-                    "name",
-                    "parameter",
-                    "field",
-                    "---",
-                }:
-                    continue
-
                 loc_raw = (
                     row_map.get("location") or row_map.get("in") or "query"
                 ).strip("` ").lower()
                 type_raw = (row_map.get("type") or "string").strip("` ").lower()
+                if (
+                    not p_name
+                    or p_name.lower() == "---"
+                    or (
+                        p_name.lower() in {"name", "parameter", "field"}
+                        and (loc_raw in {"location", "in"} or type_raw == "type")
+                    )
+                ):
+                    continue
                 req_raw = (row_map.get("required") or "false").strip("` ").lower()
                 desc_raw = (
                     row_map.get("description")

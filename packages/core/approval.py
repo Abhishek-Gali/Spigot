@@ -15,6 +15,7 @@ as specified in GENERATOR_RUNTIME.md and SECURITY.md:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import hmac
 import json
@@ -110,7 +111,7 @@ class ConsumedApprovalLedger:
         self._init_db()
 
     def _init_db(self) -> None:
-        with sqlite3.connect(self.ledger_path) as conn:
+        with contextlib.closing(sqlite3.connect(self.ledger_path)) as conn, conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS consumed_approvals (
@@ -121,13 +122,12 @@ class ConsumedApprovalLedger:
                 )
                 """
             )
-            conn.commit()
 
     def try_consume(self, nonce: str, action_digest: str, expires_at: float) -> bool:
         """Atomically record a nonce as consumed. Returns False if already used."""
         now_ts = time.time()
         try:
-            with sqlite3.connect(self.ledger_path) as conn:
+            with contextlib.closing(sqlite3.connect(self.ledger_path)) as conn, conn:
                 conn.execute(
                     """
                     INSERT INTO consumed_approvals (nonce, action_digest, consumed_at, expires_at)
@@ -135,7 +135,6 @@ class ConsumedApprovalLedger:
                     """,
                     (nonce, action_digest, now_ts, expires_at),
                 )
-                conn.commit()
             return True
         except sqlite3.IntegrityError:
             return False

@@ -15,6 +15,7 @@ map response/error -> emit redacted stderr trace.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import hmac
 import ipaddress
@@ -662,7 +663,7 @@ class ContractRuntimeEngine:
             ledger_path = Path(ledger_file)
             try:
                 ledger_path.parent.mkdir(parents=True, exist_ok=True)
-                with sqlite3.connect(ledger_path) as conn:
+                with contextlib.closing(sqlite3.connect(ledger_path)) as conn, conn:
                     conn.execute(
                         """
                         CREATE TABLE IF NOT EXISTS consumed_approvals (
@@ -680,7 +681,6 @@ class ContractRuntimeEngine:
                         """,
                         (nonce, str(token_data.get("action_digest", "")), time.time(), expires_at),
                     )
-                    conn.commit()
             except sqlite3.IntegrityError:
                 return "Action approval token has already been consumed in ledger (replay denied)."
             except (sqlite3.Error, OSError) as exc:

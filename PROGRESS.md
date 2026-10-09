@@ -163,3 +163,20 @@ All flagship release tickets (`T01`–`T32`) are complete and verified. Optional
 - **Known limitations:** Container-based sandbox execution (`sandbox_status`) is truthfully reported as `unavailable` on this Windows 11 host because Docker/Podman is not installed; deferred extensions (`X01`–`X07`) remain out of scope for the flagship release.
 - **Next dependency:** None (all flagship tickets `T01`–`T32` complete).
 
+### Session 10 — 2026-10-10 (Source-Level Security Audit Remediation & FDE Portfolio Documentation Overhaul)
+- **Authorization scope:** Owner instructions to remediate all findings from the 3-round source-level security audit, verify GitHub Actions CI, and overhaul `README.md`, `PORTFOLIO_DEMO.md`, and `scripts/run_fde_demo.py` for a 2-minute FDE review.
+- **Changed / added files:**
+  - `packages/core/network_guard.py`, `packages/runtime/engine.py`, `packages/core/approval.py`, `packages/core/extraction.py`, `packages/core/evaluation.py`, `packages/core/release_evidence.py`, `packages/templates/generator.py`
+  - `apps/api/server.py`, `apps/api/client.py`, `apps/web/index.html`, `apps/web/app.js`
+  - `workers/validation_worker.py`
+  - `tests/security/test_audit_regressions.py`, `tests/security/test_p5_security_suite.py`
+  - `scripts/run_fde_demo.py`, `README.md`, `PORTFOLIO_DEMO.md`, `PROGRESS.md`
+  - `.github/workflows/ci.yml`, `uv.lock`
+- **Commands executed and exit status:**
+  1. `.\.venv\Scripts\python.exe scripts/run_fde_demo.py` → Exit `0` (verified all 5 FDE integration & operational failure recovery scenarios end-to-end).
+  2. `.\.venv\Scripts\ruff.exe check .` → Exit `0` (`All checks passed!`).
+  3. `.\.venv\Scripts\pytest.exe -v` → Exit `0` (`55 passed in 55.58s`).
+- **Findings & gate results:**
+  - Remediated all source-level security audit findings across loopback port allowlisting (`allow_any_loopback_port=False`), DNS-pinned HTTP transport (`PinnedDNSAsyncTransport`), thread-safe socket guard stack, streaming `max_response_bytes` enforcement, parser-level `BoundedMultiPartParser` upload caps, two-step human-confirmed approvals (`human_confirmed=False` default) with persistent `approval_authority.key` provisioning and `contextlib.closing`-guarded SQLite nonce ledger (`consumed_approvals.sqlite3`), unmanifested ZIP member rejection, and cross-platform `resolve_within_sandbox_root`.
+  - Added 1-command reproducible FDE integration & operational failure script (`scripts/run_fde_demo.py`) and rewrote `README.md` and `PORTFOLIO_DEMO.md` with Mermaid architecture diagrams, verified setup commands, environment variable reference, operational failure logs, 55-test breakdown, and honest limitations.
+
