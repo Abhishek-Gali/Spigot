@@ -438,6 +438,26 @@ class ContractRuntimeEngine:
                 cooldown_sec=cooldown,
             )
 
+    def _resolve_approval_secret(self) -> str:
+        env = self._env()
+        secret = env.get("SPIGOT_APPROVAL_SECRET", "").strip()
+        if secret:
+            return secret
+        secret_file = env.get("SPIGOT_APPROVAL_SECRET_FILE", "").strip()
+        if secret_file:
+            sf_path = Path(secret_file)
+            if sf_path.is_file():
+                return sf_path.read_text(encoding="utf-8").strip()
+            return ""
+        if self._explicit_environ is None:
+            for default_candidate in (
+                Path.cwd() / ".spigot" / "workspace" / "approval_authority.key",
+                Path.cwd() / ".spigot" / "approval_authority.key",
+            ):
+                if default_candidate.is_file():
+                    return default_candidate.read_text(encoding="utf-8").strip()
+        return ""
+
     def _is_effect_advertised(self, op: dict[str, Any]) -> bool:
         effect = op.get("semantic_effect", "unknown")
         if effect == "unknown":
@@ -452,7 +472,7 @@ class ContractRuntimeEngine:
                 self.policy.get("allowed_write_operations", [])
             )
         if mode == "approval_required":
-            return len(self._env().get("SPIGOT_APPROVAL_SECRET", "").strip()) >= 16
+            return len(self._resolve_approval_secret()) >= 16
         return False
 
     def list_tools_sync(self) -> list[types.Tool]:
@@ -561,8 +581,8 @@ class ContractRuntimeEngine:
             return None
 
         env = self._env()
-        secret = env.get("SPIGOT_APPROVAL_SECRET", "")
-        if not secret or len(secret.strip()) < 16:
+        secret = self._resolve_approval_secret()
+        if not secret or len(secret) < 16:
             return (
                 "Approval-required write operation is disabled because "
                 "SPIGOT_APPROVAL_SECRET authority is not configured or has <16 characters."
@@ -630,7 +650,13 @@ class ContractRuntimeEngine:
         if not ledger_file and not bool(
             self.policy.get("allow_ephemeral_approval_ledger", False)
         ):
-            ledger_file = str(Path.cwd() / ".spigot" / "consumed_approvals.sqlite3")
+            secret_file = env.get("SPIGOT_APPROVAL_SECRET_FILE", "").strip()
+            if secret_file and Path(secret_file).is_file():
+                ledger_file = str(
+                    Path(secret_file).resolve().parent / "consumed_approvals.sqlite3"
+                )
+            else:
+                ledger_file = str(Path.cwd() / ".spigot" / "consumed_approvals.sqlite3")
 
         if ledger_file:
             ledger_path = Path(ledger_file)

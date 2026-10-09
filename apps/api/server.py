@@ -20,19 +20,29 @@ Implements the local HTTP API and security controls specified in API_UI_SPEC.md 
 from __future__ import annotations
 
 import base64
+import hmac
 import json
 import secrets
+import time
 import uuid
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.datastructures import UploadFile as StarletteUploadFile
+from starlette.formparsers import MultiPartException, MultiPartParser
 
-from packages.core.approval import ApprovalAuthority, compute_action_digest
+from packages.core.approval import (
+    DEFAULT_APPROVAL_LEDGER_FILENAME,
+    ApprovalAuthority,
+    compute_action_digest,
+    resolve_or_provision_approval_secret,
+)
 from packages.core.contracts import (
     ErrorEnvelope,
     EvidenceRef,
@@ -76,7 +86,74 @@ ALLOWED_LOOPBACK_HOSTS = frozenset(
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MiB per file
 MAX_TOTAL_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MiB aggregate per request
 MAX_UPLOAD_FILES = 20
+MAX_MULTIPART_FIELDS = 20
+MAX_MULTIPART_OVERHEAD_BYTES = 128 * 1024  # 128 KiB boundary/header overhead budget
 UPLOAD_READ_CHUNK_BYTES = 64 * 1024  # 64 KiB streaming read chunk
+
+
+class _RequestStreamLimitExceededError(Exception):
+    """Raised when an incoming HTTP request stream or multipart part exceeds byte limits."""
+
+
+async def _bounded_request_stream(
+    request: Request, max_stream_bytes: int
+) -> AsyncGenerator[bytes, None]:
+    """Yield request body chunks while enforcing a hard upper byte bound even without Content-Length."""
+    total_stream_bytes = 0
+    async for chunk in request.stream():
+        total_stream_bytes += len(chunk)
+        if total_stream_bytes > max_stream_bytes:
+            raise _RequestStreamLimitExceededError(
+                f"Request body stream exceeds maximum allowed size ({max_stream_bytes} bytes)."
+            )
+        yield chunk
+
+
+class BoundedMultiPartParser(MultiPartParser):
+    """Multipart parser enforcing per-file, aggregate-file, file-count, and field-count limits during parsing."""
+
+    def __init__(
+        self,
+        headers: Any,
+        stream: AsyncGenerator[bytes, None],
+        *,
+        max_files: int,
+        max_fields: int,
+        max_part_size: int,
+        max_file_bytes: int,
+        max_total_file_bytes: int,
+    ) -> None:
+        super().__init__(
+            headers,
+            stream,
+            max_files=max_files,
+            max_fields=max_fields,
+            max_part_size=max_part_size,
+        )
+        self.max_file_bytes = max_file_bytes
+        self.max_total_file_bytes = max_total_file_bytes
+        self._current_file_bytes = 0
+        self._total_file_bytes = 0
+
+    def on_part_begin(self) -> None:
+        super().on_part_begin()
+        self._current_file_bytes = 0
+
+    def on_part_data(self, data: bytes, start: int, end: int) -> None:
+        chunk_len = end - start
+        if self._current_part.file is not None:
+            self._current_file_bytes += chunk_len
+            self._total_file_bytes += chunk_len
+            if self._current_file_bytes > self.max_file_bytes:
+                fname = getattr(self._current_part.file, "filename", None) or "upload"
+                raise _RequestStreamLimitExceededError(
+                    f"File '{fname}' exceeds maximum size ({self.max_file_bytes} bytes)."
+                )
+            if self._total_file_bytes > self.max_total_file_bytes:
+                raise _RequestStreamLimitExceededError(
+                    f"Multipart upload exceeds aggregate maximum ({self.max_total_file_bytes} bytes)."
+                )
+        super().on_part_data(data, start, end)
 
 
 @dataclass
@@ -85,7 +162,7 @@ class LocalApiConfig:
         default_factory=lambda: Path.cwd() / ".spigot" / "workspace"
     )
     capability_token: str = field(default_factory=lambda: secrets.token_urlsafe(32))
-    approval_secret: str = field(default_factory=lambda: secrets.token_urlsafe(32))
+    approval_secret: str | None = None
     default_network_profile: Literal["STRICT_OFFLINE", "CONNECTED_SERVICES"] = "STRICT_OFFLINE"
     use_local_model_by_default: bool = False
     web_assets_dir: Path = field(
@@ -234,6 +311,8 @@ class ApprovalActionRequest(BaseModel):
     contract_hash: str = Field(min_length=1)
     policy_hash: str = Field(min_length=1)
     ttl_sec: float = Field(default=120.0, gt=0.0, le=3600.0)
+    expected_action_digest: str | None = None
+    human_confirmed: bool = True
 
 
 def _error_response(
@@ -306,6 +385,14 @@ def create_local_app(
     """Create the local-only FastAPI application for Spigot / DocForge MCP."""
     if config is None:
         config = LocalApiConfig()
+    resolved_secret, secret_file_path = resolve_or_provision_approval_secret(
+        config.workspace_dir,
+        explicit_secret=config.approval_secret,
+    )
+    config.approval_secret = resolved_secret
+    approval_ledger_path = (
+        config.workspace_dir / DEFAULT_APPROVAL_LEDGER_FILENAME
+    ).resolve()
     storage = SpigotStorage(config.workspace_dir)
     jobs = JobCoordinator(storage)
     ollama = inference_adapter or OllamaInferenceAdapter()
@@ -327,6 +414,9 @@ def create_local_app(
     app.state.storage = storage
     app.state.jobs = jobs
     app.state.ollama = ollama
+    app.state.approval_secret_file = secret_file_path
+    app.state.approval_ledger_path = approval_ledger_path
+    prepared_approvals: dict[tuple[str, str], float] = {}
 
     def _save_evidence_registry(project_id: str, evidence_list: list[EvidenceRef]) -> None:
         ev_file = meta_dir / f"evidence_{project_id}.json"
@@ -588,7 +678,6 @@ def create_local_app(
     async def upload_project_sources(
         project_id: str,
         request: Request,
-        files: list[UploadFile] | None = File(default=None),  # noqa: B008
     ) -> Response:
         proj = storage.get_project(project_id)
         if proj is None:
@@ -614,17 +703,16 @@ def create_local_app(
         content_type = request.headers.get("content-type", "").lower()
         if "application/json" in content_type:
             body_chunks: list[bytes] = []
-            body_received = 0
-            async for chunk in request.stream():
-                body_received += len(chunk)
-                if body_received > MAX_UPLOAD_BYTES:
-                    return _error_response(
-                        413,
-                        "DOCUMENT_UNREADABLE",
-                        f"Upload payload exceeds maximum size ({MAX_UPLOAD_BYTES} bytes).",
-                        "upload_sources",
-                    )
-                body_chunks.append(chunk)
+            try:
+                async for chunk in _bounded_request_stream(request, MAX_UPLOAD_BYTES):
+                    body_chunks.append(chunk)
+            except _RequestStreamLimitExceededError:
+                return _error_response(
+                    413,
+                    "DOCUMENT_UNREADABLE",
+                    f"Upload payload exceeds maximum size ({MAX_UPLOAD_BYTES} bytes).",
+                    "upload_sources",
+                )
             body_bytes = b"".join(body_chunks)
             parsed_req = UploadSourcesJsonRequest.model_validate_json(body_bytes)
             if len(parsed_req.files) > MAX_UPLOAD_FILES:
@@ -671,40 +759,60 @@ def create_local_app(
                         "upload_sources",
                     )
                 raw_items.append((item.filename, data, item.license_note))
-        elif files:
-            if len(files) > MAX_UPLOAD_FILES:
+        elif "multipart/form-data" in content_type:
+            max_stream = MAX_TOTAL_UPLOAD_BYTES + MAX_MULTIPART_OVERHEAD_BYTES
+            parser = BoundedMultiPartParser(
+                request.headers,
+                _bounded_request_stream(request, max_stream),
+                max_files=MAX_UPLOAD_FILES,
+                max_fields=MAX_MULTIPART_FIELDS,
+                max_part_size=UPLOAD_READ_CHUNK_BYTES,
+                max_file_bytes=MAX_UPLOAD_BYTES,
+                max_total_file_bytes=MAX_TOTAL_UPLOAD_BYTES,
+            )
+            try:
+                form = await parser.parse()
+            except _RequestStreamLimitExceededError as exc:
                 return _error_response(
                     413,
                     "DOCUMENT_UNREADABLE",
-                    f"Multipart upload exceeds maximum file count ({MAX_UPLOAD_FILES}).",
+                    str(exc),
                     "upload_sources",
                 )
-            aggregate_bytes = 0
-            for uf in files:
-                file_chunks: list[bytes] = []
-                file_bytes = 0
-                while True:
-                    chunk = await uf.read(UPLOAD_READ_CHUNK_BYTES)
-                    if not chunk:
-                        break
-                    file_bytes += len(chunk)
-                    aggregate_bytes += len(chunk)
-                    if file_bytes > MAX_UPLOAD_BYTES:
-                        return _error_response(
-                            413,
-                            "DOCUMENT_UNREADABLE",
-                            f"File '{uf.filename}' exceeds maximum size ({MAX_UPLOAD_BYTES} bytes).",
-                            "upload_sources",
-                        )
-                    if aggregate_bytes > MAX_TOTAL_UPLOAD_BYTES:
-                        return _error_response(
-                            413,
-                            "DOCUMENT_UNREADABLE",
-                            f"Multipart upload exceeds aggregate maximum ({MAX_TOTAL_UPLOAD_BYTES} bytes).",
-                            "upload_sources",
-                        )
-                    file_chunks.append(chunk)
-                raw_items.append((uf.filename or "document.md", b"".join(file_chunks), None))
+            except MultiPartException as exc:
+                msg = getattr(exc, "message", str(exc))
+                status = (
+                    413
+                    if any(
+                        token in msg
+                        for token in ("Too many files", "Too many fields", "exceeded maximum size")
+                    )
+                    else 400
+                )
+                return _error_response(
+                    status,
+                    "DOCUMENT_UNREADABLE",
+                    msg,
+                    "upload_sources",
+                )
+            try:
+                uploaded_files = [
+                    val
+                    for _, val in form.multi_items()
+                    if isinstance(val, StarletteUploadFile)
+                ]
+                if not uploaded_files:
+                    return _error_response(
+                        400,
+                        "DOCUMENT_UNREADABLE",
+                        "No local files provided in request.",
+                        "upload_sources",
+                    )
+                for uf in uploaded_files:
+                    data = await uf.read()
+                    raw_items.append((uf.filename or "document.md", data, None))
+            finally:
+                await form.close()
         else:
             return _error_response(
                 400,
@@ -1765,6 +1873,7 @@ def create_local_app(
             contract_hash=req.contract_hash,
             policy_hash=req.policy_hash,
         )
+        prepared_approvals[(project_id, action_digest)] = time.time() + 300.0
         return JSONResponse(
             status_code=200,
             content={
@@ -1775,6 +1884,8 @@ def create_local_app(
                 "target_url": req.target_url,
                 "contract_hash": req.contract_hash,
                 "policy_hash": req.policy_hash,
+                "approval_secret_file": str(secret_file_path) if secret_file_path else None,
+                "approval_ledger_path": str(approval_ledger_path),
             },
         )
 
@@ -1787,7 +1898,43 @@ def create_local_app(
         )
         if validation_err is not None:
             return validation_err
-        authority = ApprovalAuthority(config.approval_secret)
+        if not req.human_confirmed:
+            return _error_response(
+                403,
+                "POLICY_DENIED",
+                "Explicit human confirmation (human_confirmed=true) is required to issue an approval token.",
+                "issue_approval",
+            )
+        action_digest = compute_action_digest(
+            operation_id=req.operation_id,
+            arguments=req.arguments,
+            target_url=req.target_url,
+            contract_hash=req.contract_hash,
+            policy_hash=req.policy_hash,
+        )
+        if req.expected_action_digest is not None and not hmac.compare_digest(
+            req.expected_action_digest, action_digest
+        ):
+            return _error_response(
+                409,
+                "REVISION_CONFLICT",
+                "Provided expected_action_digest does not match canonical action parameters.",
+                "issue_approval",
+            )
+        prep_expiry = prepared_approvals.get((project_id, action_digest))
+        if prep_expiry is None or time.time() > prep_expiry:
+            prepared_approvals.pop((project_id, action_digest), None)
+            return _error_response(
+                409,
+                "REVISION_CONFLICT",
+                "Action must be prepared via /approvals/prepare before issuing an approval token.",
+                "issue_approval",
+            )
+        prepared_approvals.pop((project_id, action_digest), None)
+        assert config.approval_secret is not None
+        authority = ApprovalAuthority(
+            config.approval_secret, ledger_path=approval_ledger_path
+        )
         token = authority.issue_token(
             operation_id=req.operation_id,
             arguments=req.arguments,
@@ -1802,6 +1949,8 @@ def create_local_app(
                 "project_id": project_id,
                 "approval_token": token,
                 "approval_token_json": json.dumps(token, sort_keys=True),
+                "approval_secret_file": str(secret_file_path) if secret_file_path else None,
+                "approval_ledger_path": str(approval_ledger_path),
             },
         )
 

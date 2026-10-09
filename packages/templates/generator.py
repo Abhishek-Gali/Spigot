@@ -163,8 +163,9 @@ def _render_env_example(contract: ApiContract) -> str:
         [
             "",
             "# Action Approval Authority (required when policy mode is 'approval_required')",
-            "# Shared HMAC secret (>=16 chars) used to verify owner-signed single-use tokens",
+            "# Shared HMAC secret (>=16 chars) or workspace key file provisioned by Spigot Local API",
             "SPIGOT_APPROVAL_SECRET=",
+            "SPIGOT_APPROVAL_SECRET_FILE=.spigot/workspace/approval_authority.key",
             "# Persistent SQLite ledger path for atomic single-use nonce replay protection",
             "SPIGOT_APPROVAL_LEDGER_PATH=.spigot/consumed_approvals.sqlite3",
             "# Per-invocation single-use owner approval token JSON (when executing an approved write)",

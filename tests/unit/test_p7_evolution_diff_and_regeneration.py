@@ -423,7 +423,15 @@ def test_t31_approval_invalidation_reproducibility_and_api_evolution_routes(
         )
         art_v1_id = gen_job["result"]["artifact_id"]
 
-        # Issue an owner action approval bound to v1 contract_hash & policy_hash
+        # Prepare and issue an owner action approval bound to v1 contract_hash & policy_hash
+        prep_v1 = client.prepare_approval(
+            pid,
+            operation_id="delete_orders_order_id",
+            arguments={"order_id": "ord_900"},
+            target_url="http://127.0.0.1:18080/orders/ord_900",
+            contract_hash=hash_v1,
+            policy_hash=policy_v1["policy_hash"],
+        )
         issued = client.issue_approval(
             pid,
             operation_id="delete_orders_order_id",
@@ -431,6 +439,7 @@ def test_t31_approval_invalidation_reproducibility_and_api_evolution_routes(
             target_url="http://127.0.0.1:18080/orders/ord_900",
             contract_hash=hash_v1,
             policy_hash=policy_v1["policy_hash"],
+            expected_action_digest=prep_v1["action_digest"],
         )
         token_v1 = issued["approval_token"]
 

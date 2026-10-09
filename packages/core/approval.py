@@ -295,6 +295,74 @@ class ApprovalAuthority:
         return None
 
 
+DEFAULT_APPROVAL_SECRET_FILENAME = "approval_authority.key"
+DEFAULT_APPROVAL_LEDGER_FILENAME = "consumed_approvals.sqlite3"
+
+
+def _write_secret_file(path: Path, secret: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(secret.strip() + "\n", encoding="utf-8")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+def resolve_or_provision_approval_secret(
+    workspace_dir: Path | None = None,
+    *,
+    explicit_secret: str | None = None,
+    environ: dict[str, str] | None = None,
+) -> tuple[str, Path | None]:
+    """Resolve or provision the shared owner approval secret between Local API and runtime.
+
+    Order of precedence:
+    1. `explicit_secret` argument (if provided and >=16 characters).
+    2. `SPIGOT_APPROVAL_SECRET` in `environ` (or `os.environ`).
+    3. `SPIGOT_APPROVAL_SECRET_FILE` in `environ` (or `os.environ`).
+    4. `<workspace_dir>/approval_authority.key` (loaded if present, or generated with
+       256-bit `secrets.token_urlsafe(32)` and persisted with 0600 permissions).
+    """
+    env = os.environ if environ is None else environ
+    key_file_path = (
+        (workspace_dir / DEFAULT_APPROVAL_SECRET_FILENAME).resolve()
+        if workspace_dir is not None
+        else None
+    )
+
+    candidate = (explicit_secret or "").strip()
+    if not candidate:
+        candidate = env.get("SPIGOT_APPROVAL_SECRET", "").strip()
+
+    if not candidate:
+        env_file_str = env.get("SPIGOT_APPROVAL_SECRET_FILE", "").strip()
+        if env_file_str:
+            env_file = Path(env_file_str).resolve()
+            if env_file.is_file():
+                candidate = env_file.read_text(encoding="utf-8").strip()
+            else:
+                candidate = secrets.token_urlsafe(32)
+                _write_secret_file(env_file, candidate)
+            if key_file_path is None:
+                key_file_path = env_file
+
+    if not candidate and key_file_path is not None and key_file_path.is_file():
+        loaded = key_file_path.read_text(encoding="utf-8").strip()
+        if len(loaded) >= 16:
+            candidate = loaded
+
+    if not candidate:
+        candidate = secrets.token_urlsafe(32)
+
+    if len(candidate) < 16:
+        raise ValueError("ApprovalAuthority secret must be at least 16 characters long.")
+
+    if key_file_path is not None:
+        _write_secret_file(key_file_path, candidate)
+
+    return candidate, key_file_path
+
+
 def main(argv: list[str] | None = None) -> int:
     """Owner CLI utility to prepare or issue single-use action approvals for exported servers."""
     parser = argparse.ArgumentParser(
@@ -312,6 +380,7 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--policy-hash", required=True)
         if cmd_name == "issue":
             p.add_argument("--ttl-sec", type=float, default=120.0)
+            p.add_argument("--secret-file", default="")
 
     parsed = parser.parse_args(argv)
     arguments = json.loads(parsed.args_json)
@@ -341,9 +410,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    secret = os.environ.get("SPIGOT_APPROVAL_SECRET", "")
+    secret = os.environ.get("SPIGOT_APPROVAL_SECRET", "").strip()
+    secret_file = getattr(parsed, "secret_file", "") or os.environ.get(
+        "SPIGOT_APPROVAL_SECRET_FILE", ""
+    ).strip()
+    if not secret and secret_file and Path(secret_file).is_file():
+        secret = Path(secret_file).read_text(encoding="utf-8").strip()
     if not secret:
-        sys.stderr.write("ERROR: SPIGOT_APPROVAL_SECRET environment variable is required.\n")
+        sys.stderr.write(
+            "ERROR: SPIGOT_APPROVAL_SECRET or SPIGOT_APPROVAL_SECRET_FILE is required.\n"
+        )
         return 1
 
     authority = ApprovalAuthority(secret)

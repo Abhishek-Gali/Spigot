@@ -26,7 +26,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install locked dependencies
-        run: uv sync
+        run: uv sync --locked
 
       - name: Run Ruff linter
         run: uv run ruff check .

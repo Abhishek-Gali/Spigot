@@ -324,10 +324,11 @@ async def test_finding_4_streaming_response_size_cap_stops_early() -> None:
 def test_finding_5_upload_streaming_per_file_aggregate_and_count_limits(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Upload endpoint enforces per-file, aggregate, and file-count limits via chunked reads."""
+    """Upload endpoint enforces per-file, aggregate, file-count, and field-count limits during multipart parsing."""
     monkeypatch.setattr(api_server_mod, "MAX_UPLOAD_BYTES", 1024)  # 1 KiB per file
     monkeypatch.setattr(api_server_mod, "MAX_TOTAL_UPLOAD_BYTES", 2048)  # 2 KiB aggregate
     monkeypatch.setattr(api_server_mod, "MAX_UPLOAD_FILES", 3)
+    monkeypatch.setattr(api_server_mod, "MAX_MULTIPART_FIELDS", 3)
 
     cfg = LocalApiConfig(
         workspace_dir=tmp_path / "ws_upload",
@@ -345,7 +346,7 @@ def test_finding_5_upload_streaming_per_file_aggregate_and_count_limits(
         assert exc_single.value.status_code == 413
 
         # 2. Multipart upload with 3 files that individually pass (800 bytes each)
-        #    but exceed MAX_TOTAL_UPLOAD_BYTES (2400 > 2048) -> HTTP 413
+        #    but exceed MAX_TOTAL_UPLOAD_BYTES (2400 > 2048) -> HTTP 413 during parsing
         multipart_resp = http_client.post(
             f"/api/projects/{pid}/sources",
             headers={"X-Spigot-Token": "tok-upload-test"},
@@ -357,7 +358,7 @@ def test_finding_5_upload_streaming_per_file_aggregate_and_count_limits(
         )
         assert multipart_resp.status_code == 413
 
-        # 3. Multipart upload exceeding MAX_UPLOAD_FILES (4 > 3) -> HTTP 413
+        # 3. Multipart upload exceeding MAX_UPLOAD_FILES (4 > 3) -> HTTP 413 during parsing
         too_many_resp = http_client.post(
             f"/api/projects/{pid}/sources",
             headers={"X-Spigot-Token": "tok-upload-test"},
@@ -367,6 +368,35 @@ def test_finding_5_upload_streaming_per_file_aggregate_and_count_limits(
             ],
         )
         assert too_many_resp.status_code == 413
+
+        # 4. Multipart upload exceeding MAX_MULTIPART_FIELDS (5 > 3 non-file fields) -> HTTP 413
+        too_many_fields_resp = http_client.post(
+            f"/api/projects/{pid}/sources",
+            headers={"X-Spigot-Token": "tok-upload-test"},
+            data={f"field_{i}": "val" for i in range(5)},
+            files=[("files", ("ok.md", b"# Doc\n", "text/markdown"))],
+        )
+        assert too_many_fields_resp.status_code == 413
+
+        # 5. Multipart upload with forged small Content-Length header on oversized file -> HTTP 413
+        boundary = "----SpigotAuditBoundary"
+        raw_multipart = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="files"; filename="forged.md"\r\n'
+            f"Content-Type: text/markdown\r\n\r\n"
+            + ("X" * 1600)
+            + f"\r\n--{boundary}--\r\n"
+        ).encode("utf-8")
+        forged_cl_resp = http_client.post(
+            f"/api/projects/{pid}/sources",
+            headers={
+                "X-Spigot-Token": "tok-upload-test",
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
+                "Content-Length": "64",
+            },
+            content=raw_multipart,
+        )
+        assert forged_cl_resp.status_code == 413
 
 
 @pytest.mark.asyncio
@@ -513,7 +543,7 @@ async def test_finding_6_default_persistent_approval_ledger_and_fail_closed(
 def test_finding_7_approval_endpoints_validate_project_contract_plan_and_url(
     tmp_path: Path,
 ) -> None:
-    """Approval prepare/issue endpoints return 404 on unknown project and validate frozen state."""
+    """Approval prepare/issue endpoints return 404 on unknown project and enforce prepare + human confirmation."""
     cfg = LocalApiConfig(
         workspace_dir=tmp_path / "ws_approvals",
         capability_token="tok-approvals",
@@ -612,6 +642,248 @@ def test_finding_7_approval_endpoints_validate_project_contract_plan_and_url(
             )
         assert exc_url.value.status_code == 403
 
+        # 4. Calling /approvals/issue WITHOUT first calling /approvals/prepare -> 409
+        with pytest.raises(SpigotApiError) as exc_unprepared:
+            client.issue_approval(
+                pid,
+                operation_id="post_v1_transfers",
+                arguments={},
+                target_url="http://127.0.0.1:19000/v1/transfers",
+                contract_hash=c_hash,
+                policy_hash=p_hash,
+            )
+        assert exc_unprepared.value.status_code == 409
+
+        # 5. Calling /approvals/issue with human_confirmed=False -> 403
+        prep = client.prepare_approval(
+            pid,
+            operation_id="post_v1_transfers",
+            arguments={},
+            target_url="http://127.0.0.1:19000/v1/transfers",
+            contract_hash=c_hash,
+            policy_hash=p_hash,
+        )
+        with pytest.raises(SpigotApiError) as exc_unconfirmed:
+            client.issue_approval(
+                pid,
+                operation_id="post_v1_transfers",
+                arguments={},
+                target_url="http://127.0.0.1:19000/v1/transfers",
+                contract_hash=c_hash,
+                policy_hash=p_hash,
+                expected_action_digest=prep["action_digest"],
+                human_confirmed=False,
+            )
+        assert exc_unconfirmed.value.status_code == 403
+
+        # 6. Calling /approvals/issue with wrong expected_action_digest -> 409
+        with pytest.raises(SpigotApiError) as exc_bad_digest:
+            client.issue_approval(
+                pid,
+                operation_id="post_v1_transfers",
+                arguments={},
+                target_url="http://127.0.0.1:19000/v1/transfers",
+                contract_hash=c_hash,
+                policy_hash=p_hash,
+                expected_action_digest="0" * 64,
+                human_confirmed=True,
+            )
+        assert exc_bad_digest.value.status_code == 409
+
+        # 7. Valid prepared + human_confirmed issuance succeeds once and consumes prepared state
+        issued = client.issue_approval(
+            pid,
+            operation_id="post_v1_transfers",
+            arguments={},
+            target_url="http://127.0.0.1:19000/v1/transfers",
+            contract_hash=c_hash,
+            policy_hash=p_hash,
+            expected_action_digest=prep["action_digest"],
+            human_confirmed=True,
+        )
+        assert "approval_token_json" in issued
+        with pytest.raises(SpigotApiError) as exc_second_issue:
+            client.issue_approval(
+                pid,
+                operation_id="post_v1_transfers",
+                arguments={},
+                target_url="http://127.0.0.1:19000/v1/transfers",
+                contract_hash=c_hash,
+                policy_hash=p_hash,
+                expected_action_digest=prep["action_digest"],
+                human_confirmed=True,
+            )
+        assert exc_second_issue.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_priority_2_default_api_to_runtime_secret_provisioning_and_restart_replay(
+    tmp_path: Path,
+) -> None:
+    """Default LocalApiConfig provisions a persisted workspace secret shared via SPIGOT_APPROVAL_SECRET_FILE."""
+    ws_dir = tmp_path / "shared_ws"
+
+    class MockTransferHandler(BaseHTTPRequestHandler):
+        def log_message(self, format: str, *args: Any) -> None:
+            return
+
+        def do_POST(self) -> None:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length > 0:
+                self.rfile.read(length)
+            body = b'{"transfer_status":"completed"}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = HTTPServer(("127.0.0.1", 0), MockTransferHandler)
+    port = server.server_port
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base_url = f"http://127.0.0.1:{port}"
+        target_url = f"{base_url}/v1/transfers"
+
+        # 1. Start Local API with default LocalApiConfig (no explicit approval_secret passed)
+        cfg1 = LocalApiConfig(workspace_dir=ws_dir, capability_token="tok-prov")
+        create_local_app(cfg1)
+        provisioned_key_file = ws_dir / "approval_authority.key"
+        assert provisioned_key_file.is_file()
+        secret_on_disk = provisioned_key_file.read_text(encoding="utf-8").strip()
+        assert len(secret_on_disk) >= 16
+        assert cfg1.approval_secret == secret_on_disk
+
+        # 2. Restarting LocalApiConfig on the same workspace reuses the persisted secret
+        cfg2 = LocalApiConfig(workspace_dir=ws_dir, capability_token="tok-prov")
+        app2 = create_local_app(cfg2)
+        assert cfg2.approval_secret == secret_on_disk
+
+        with TestClient(app2, base_url="http://127.0.0.1:8000") as http_client:
+            client = SpigotApiClient(http_client, capability_token="tok-prov")
+            proj = client.create_project("Default Provisioning Project")
+            pid = proj["project_id"]
+            client.upload_sources(
+                pid,
+                [
+                    (
+                        "transfers.md",
+                        (
+                            f"# Transfers API\n\n"
+                            f"Base URL: `{base_url}`\n\n"
+                            f"Authentication: Send `X-API-Key: <your-api-key>` on every HTTP request.\n\n"
+                            f"## Create Transfer\n\n"
+                            f"`POST /v1/transfers`\n\n"
+                            f"Create a transfer.\n"
+                        ).encode(),
+                    )
+                ],
+            )
+            ext = client.extract_project(pid)
+            frz = client.freeze_contract(pid, expected_revision=ext["result"]["revision"])
+            tp = client.create_tool_plan(
+                pid,
+                contract_hash=frz["canonical_hash"],
+                policy_mode="approval_required",
+            )
+            gen = client.generate_artifact(pid, plan_hash=tp["tool_plan"]["plan_hash"])
+            zip_bytes = client.download_artifact_zip(gen["result"]["artifact_id"])
+
+            # Verify provisioned secret is NEVER embedded in the exported ZIP
+            assert secret_on_disk.encode("utf-8") not in zip_bytes
+
+            # Prepare and issue approval token through the Local API
+            prep = client.prepare_approval(
+                pid,
+                operation_id="post_v1_transfers",
+                arguments={},
+                target_url=target_url,
+                contract_hash=frz["canonical_hash"],
+                policy_hash=tp["policy"]["policy_hash"],
+            )
+            issued = client.issue_approval(
+                pid,
+                operation_id="post_v1_transfers",
+                arguments={},
+                target_url=target_url,
+                contract_hash=frz["canonical_hash"],
+                policy_hash=tp["policy"]["policy_hash"],
+                expected_action_digest=prep["action_digest"],
+                human_confirmed=True,
+            )
+            assert issued["approval_secret_file"] == str(provisioned_key_file.resolve())
+            summary = client.get_project(pid)
+
+        # 3. Extract the generated server's contract, plan, and policy and run ContractRuntimeEngine
+        #    using SPIGOT_APPROVAL_SECRET_FILE (no raw secret in env)
+        runtime_env = {
+            "SPIGOT_CRED_API_KEY_HEADER": "live-api-key-val",
+            "SPIGOT_APPROVAL_SECRET_FILE": issued["approval_secret_file"],
+            "SPIGOT_ACTION_APPROVAL_TOKEN": issued["approval_token_json"],
+        }
+        engine1 = ContractRuntimeEngine(
+            contract_data=summary["contract"],
+            tool_plan_data=summary["tool_plan"],
+            policy_data=tp["policy"],
+            environ=runtime_env,
+        )
+        res1 = await engine1.call_tool_async("post_v1_transfers", {})
+        assert res1.is_error is False
+
+        # 4. Simulated process restart with the same token is rejected by the workspace SQLite ledger
+        engine2 = ContractRuntimeEngine(
+            contract_data=summary["contract"],
+            tool_plan_data=summary["tool_plan"],
+            policy_data=tp["policy"],
+            environ=runtime_env,
+        )
+        res2 = await engine2.call_tool_async("post_v1_transfers", {})
+        assert res2.is_error is True
+        assert "already been consumed in ledger" in res2.content[0].text
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_priority_3_concurrent_socket_guard_threads() -> None:
+    """Concurrent threads entering/exiting enforce_socket_guard maintain strict union enforcement and restore hooks."""
+    orig_connect = socket.socket.connect
+    errors: list[BaseException] = []
+    barrier = threading.Barrier(6)
+
+    def worker(worker_idx: int) -> None:
+        try:
+            guard = NetworkPolicyGuard(profile=NetworkProfile.STRICT_OFFLINE)
+            barrier.wait(timeout=5.0)
+            for _ in range(10):
+                with guard.enforce_socket_guard():
+                    # Forbidden external IP and unregistered loopback port must always fail
+                    s_ext = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    try:
+                        with pytest.raises(EgressDeniedError):
+                            s_ext.connect(("93.184.216.34", 80))
+                    finally:
+                        s_ext.close()
+
+                    s_redis = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    try:
+                        with pytest.raises(EgressDeniedError):
+                            s_redis.connect(("127.0.0.1", 6379 + worker_idx))
+                    finally:
+                        s_redis.close()
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10.0)
+
+    assert not errors
+    assert socket.socket.connect is orig_connect
+
 
 def test_finding_8_and_9_env_example_and_unmanifested_zip_rejection(
     tmp_path: Path,
@@ -657,9 +929,10 @@ def test_finding_8_and_9_env_example_and_unmanifested_zip_rejection(
         contract, plan, policy, pkg_dir, package_slug="audit_pkg"
     )
 
-    # Finding 8: .env.example documents SPIGOT_APPROVAL_SECRET and SPIGOT_APPROVAL_LEDGER_PATH
+    # Finding 8: .env.example documents SPIGOT_APPROVAL_SECRET, SECRET_FILE, and LEDGER_PATH
     env_example = (pkg_dir / ".env.example").read_text(encoding="utf-8")
     assert "SPIGOT_APPROVAL_SECRET=" in env_example
+    assert "SPIGOT_APPROVAL_SECRET_FILE=" in env_example
     assert "SPIGOT_APPROVAL_LEDGER_PATH=" in env_example
     assert "SPIGOT_ACTION_APPROVAL_TOKEN=" in env_example
 

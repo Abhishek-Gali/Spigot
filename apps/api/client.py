@@ -387,18 +387,24 @@ class SpigotApiClient:
         contract_hash: str,
         policy_hash: str,
         ttl_sec: float = 120.0,
+        expected_action_digest: str | None = None,
+        human_confirmed: bool = True,
     ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "operation_id": operation_id,
+            "arguments": arguments,
+            "target_url": target_url,
+            "contract_hash": contract_hash,
+            "policy_hash": policy_hash,
+            "ttl_sec": ttl_sec,
+            "human_confirmed": human_confirmed,
+        }
+        if expected_action_digest is not None:
+            payload["expected_action_digest"] = expected_action_digest
         res = self._client.post(
             f"/api/projects/{project_id}/approvals/issue",
             headers=self._headers(),
-            json={
-                "operation_id": operation_id,
-                "arguments": arguments,
-                "target_url": target_url,
-                "contract_hash": contract_hash,
-                "policy_hash": policy_hash,
-                "ttl_sec": ttl_sec,
-            },
+            json=payload,
         )
         return self._unwrap(res)
 

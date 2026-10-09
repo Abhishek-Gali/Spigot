@@ -71,9 +71,8 @@ def _dispatch_guarded_connect(sock: socket.socket, address: Any) -> Any:
     if isinstance(address, tuple) and len(address) >= 2 and not _is_stdlib_socketpair_caller():
         host, port = str(address[0]), int(address[1])
         with _GUARD_LOCK:
-            active = list(_ACTIVE_GUARDS)
-        for guard in active:
-            guard.validate_host_port(host, port)
+            for guard in tuple(_ACTIVE_GUARDS):
+                guard.validate_host_port(host, port)
     return _ORIG_CONNECT(sock, address)
 
 
@@ -81,9 +80,8 @@ def _dispatch_guarded_connect_ex(sock: socket.socket, address: Any) -> int:
     if isinstance(address, tuple) and len(address) >= 2 and not _is_stdlib_socketpair_caller():
         host, port = str(address[0]), int(address[1])
         with _GUARD_LOCK:
-            active = list(_ACTIVE_GUARDS)
-        for guard in active:
-            guard.validate_host_port(host, port)
+            for guard in tuple(_ACTIVE_GUARDS):
+                guard.validate_host_port(host, port)
     return _ORIG_CONNECT_EX(sock, address)
 
 
@@ -92,9 +90,8 @@ def _dispatch_guarded_create_connection(
 ) -> socket.socket:
     host, port = str(address[0]), int(address[1])
     with _GUARD_LOCK:
-        active = list(_ACTIVE_GUARDS)
-    for guard in active:
-        guard.validate_host_port(host, port)
+        for guard in tuple(_ACTIVE_GUARDS):
+            guard.validate_host_port(host, port)
     return _ORIG_CREATE_CONNECTION(address, *args, **kwargs)
 
 
@@ -112,7 +109,8 @@ class NetworkPolicyGuard:
         """Explicitly register an approved local loopback port (e.g. for a local mock oracle)."""
         if port <= 0 or port > 65535:
             raise ValueError(f"Invalid TCP port: {port}")
-        self.registered_loopback_ports.add(int(port))
+        with _GUARD_LOCK:
+            self.registered_loopback_ports.add(int(port))
 
     def register_loopback_url(self, url: str) -> None:
         """Extract and register the port from a loopback base URL."""
@@ -129,15 +127,16 @@ class NetworkPolicyGuard:
             pass
 
     def _record(self, host: str, port: int | None, allowed: bool, reason: str) -> None:
-        self.attempts.append(
-            EgressAttemptRecord(
-                host=host,
-                port=port,
-                allowed=allowed,
-                reason=reason,
-                profile=self.profile.value,
+        with _GUARD_LOCK:
+            self.attempts.append(
+                EgressAttemptRecord(
+                    host=host,
+                    port=port,
+                    allowed=allowed,
+                    reason=reason,
+                    profile=self.profile.value,
+                )
             )
-        )
 
     def validate_url(self, url: str) -> None:
         """Validate a URL before issuing any HTTP request."""
