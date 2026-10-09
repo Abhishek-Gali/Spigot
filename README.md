@@ -9,9 +9,120 @@ Give **Spigot (DocForge MCP)** API documentation and receive an inspectable MCP 
 
 The flagship demonstration is: import a local PDF or Markdown API manual, extract operations with evidence, resolve one ambiguous field, generate a server, invoke it against a local mock, demonstrate a blocked unsafe action, and identify an integration-breaking change in a second version of the manual. Do all of this with external network access disabled.
 
-## Quickstart & standardized verification commands
+---
 
-### 1. Environment & offline verification targets (`packages.core.release_evidence`)
+## Key Use Cases
+
+1. **Turn Unstructured Internal or Legacy API Docs into MCP Servers**
+   - Many internal microservice runbooks, partner integrations, and legacy hardware/enterprise manuals only exist as **Markdown docs (`.md`)**, **saved HTML reference pages (`.html`)**, or **multi-page PDF manuals (`.pdf`)**—not clean OpenAPI specs. Spigot compiles those prose manuals (as well as OpenAPI 3.0 `.json`/`.yaml` specs) directly into runnable Python MCP servers.
+2. **100% Offline & Air-Gapped Tool Generation**
+   - Enterprise and security-sensitive teams cannot upload proprietary API documentation to cloud LLMs. Spigot runs **entirely on your machine** using local loopback Ollama models (`qwen2.5:1.5b` / `qwen2.5:0.5b`) and enforces a socket-level `STRICT_OFFLINE` guard so documentation and credentials never leave localhost.
+3. **Fail-Closed Safety & Runtime Policy Enforcement for AI Agents**
+   - Giving an AI agent raw access to production APIs is risky. Spigot compiles policies directly into the generated MCP runtime:
+     - **`read_only` mode:** Blocks all `POST`/`PUT`/`PATCH`/`DELETE` calls at runtime.
+     - **`approval_required` mode:** Requires a single-use, HMAC-SHA256 argument-bound approval token (tracked in a persistent SQLite nonce ledger) before executing state-changing or destructive tools.
+     - **Host allowlisting & SSRF protection:** Rejects requests to unauthorized hosts and redacts secrets (`Authorization`, `X-API-Key`) from all logs and error envelopes.
+4. **Context-Window Optimization via Dependency-Preserving Tool Packs**
+   - Exposing dozens of verbose API endpoints bloats an agent's context window and degrades tool selection. Spigot slices an API contract into task-focused tool packs (e.g., *Read-Only Investigation* vs. *Operator CRUD*) while **automatically retaining prerequisite `{id}` lookup tools** (e.g., keeping `GET /customers` when `POST /orders` requires `customer_id`), reducing tool-schema context size by **`65.56%`** without breaking multi-step agent workflows.
+5. **API Version Drift Detection & Safe Regeneration (`v1` → `v2`)**
+   - When an upstream API manual updates, Spigot diffs the new contract against the previous revision, classifies **breaking vs. additive changes** (e.g., new required parameters, removed endpoints, auth header changes), carries forward valid human overrides, and invalidates stale ones before regenerating the server.
+
+---
+
+## How It Works (End-to-End Pipeline)
+
+Spigot separates **probabilistic document understanding** from **deterministic code generation**. A language model never writes executable Python code; instead, it proposes structured facts that must pass verbatim quote verification against the source document before a deterministic compiler emits the MCP server.
+
+```mermaid
+flowchart LR
+    A["1. Local Docs<br/>(.md, .html, .pdf, .yaml, .json)"] --> B["2. Layout Parser &<br/>Evidence Extractor<br/>(Deterministic + Local Ollama)"]
+    B --> C["3. Bundle Reconciler &<br/>Human Review<br/>(Resolve Blocking Findings)"]
+    C --> D["4. Immutable ApiContract &<br/>Dependency-Aware ToolPlan"]
+    D --> E["5. Deterministic Codegen &<br/>7-Layer Isolated Verifier"]
+    E --> F["6. Standalone MCP Server<br/>(.zip Package + Policy Runtime)"]
+```
+
+### Stage-by-Stage Breakdown
+
+#### Stage 1: Multi-Format Local Ingestion ([`packages/core/parsers/`](packages/core/parsers/))
+- **OpenAPI 3.0 (`.json`, `.yaml`, `.yml`):** Normalized by [`normalize_openapi_document`](packages/core/openapi_normalizer.py) with bounded `$ref` resolution, cycle detection, and per-operation readiness scoring.
+- **Markdown & Text (`.md`, `.txt`):** Parsed by [`parse_markdown_or_text`](packages/core/parsers/markdown_parser.py) with exact line-number and section-path provenance.
+- **Saved HTML (`.html`, `.htm`):** Sanitized by [`sanitize_and_parse_saved_html`](packages/core/parsers/html_pdf_parser.py) (strips `<script>`, `<style>`, and event handlers; never fetches remote assets).
+- **Text-Layer PDFs (`.pdf`):** Parsed by [`parse_pdf_document`](packages/core/parsers/html_pdf_parser.py) with page numbers and bounding-box coordinates. Scanned image-only PDFs fail closed with `OCR_REQUIRED` rather than hallucinating endpoints.
+
+#### Stage 2: Evidence-Grounded Extraction ([`packages/core/extraction.py`](packages/core/extraction.py))
+- Runs a 6-stage candidate extraction pipeline combining structural patterns (headings, HTTP verb+path lines, parameter tables, `curl` examples) with optional local Ollama structured JSON extraction ([`OllamaInferenceAdapter`](packages/core/local_inference.py)).
+- **Anti-hallucination gate:** Every critical field (`HTTP method`, `path`, `base URL`, `auth scheme`, `parameter location/type`) must attach an [`EvidenceRef`](packages/core/contracts.py) containing an exact substring quote verified against the parsed source block. Unverified claims are downgraded to `UNVERIFIED_EVIDENCE` blocking findings.
+
+#### Stage 3: Multi-Document Reconciliation & Review ([`packages/core/reconciliation.py`](packages/core/reconciliation.py))
+- Merges multi-file bundles (for example, `01_auth_guide.md` + `02_endpoints_reference.pdf`) into a unified draft contract.
+- Detects missing or contradictory facts across documents (`MISSING_METHOD`, `CONFLICTING_METHOD_PATH`, `AMBIGUOUS_AUTH`, `UNKNOWN_AUTH`, `MISSING_BASE_URL`).
+- An operation cannot be promoted to `ready` until all blocking findings are resolved either by document evidence or an explicit, precondition-checked [`UserOverride`](packages/core/contracts.py) recorded by the project owner.
+
+#### Stage 4: Dependency-Preserving Tool Planning & Deterministic Codegen ([`packages/core/planning.py`](packages/core/planning.py), [`packages/templates/generator.py`](packages/templates/generator.py))
+- [`create_tool_plan`](packages/core/planning.py) selects operations for the chosen workflow preset, automatically pulls in prerequisite lookup tools when an operation requires a path/body `{id}`, and generates deterministic, agent-optimized tool descriptions.
+- [`generate_server_package`](packages/templates/generator.py) emits a clean, inspectable Python MCP stdio server package where all URLs, schemas, and descriptions are serialized as pure JSON data structures (`json.dumps`), verified with `ast.parse`, and packaged into a byte-for-byte reproducible `.zip` archive.
+
+#### Stage 5: Separated 7-Layer Verification ([`workers/validation_worker.py`](workers/validation_worker.py))
+- [`IsolatedValidationWorker`](workers/validation_worker.py) validates the generated package across 7 independently reported gates:
+  1. `build_status` (package structure & manifest integrity)
+  2. `static_check_status` (AST & syntax safety)
+  3. `protocol_check_status` (real MCP stdio JSON-RPC `initialize` & `tools/list` round-trip)
+  4. `mock_test_status` (end-to-end tool calls against a local HTTP mock oracle)
+  5. `security_suite_status` (prompt-injection, SSRF host blocking, secret redaction, and approval-gate tests)
+  6. `sandbox_status` (uses rootless Docker/Podman `--network none` when installed; honestly reports `unavailable` when absent)
+  7. `live_smoke_status` (optional connected smoke check)
+
+#### Stage 6: Policy-Enforcing Runtime ([`packages/runtime/engine.py`](packages/runtime/engine.py))
+- At runtime, [`ContractRuntimeEngine`](packages/runtime/engine.py) validates inputs against JSON Schema, enforces host allowlists and HTTP timeouts, retries safe `GET`/`HEAD`/`OPTIONS` calls on transient `429`/`503` errors, refuses automatic replay on ambiguous write timeouts (`OUTCOME_UNKNOWN`), enforces HMAC action approvals, and strips secrets from all outputs.
+
+---
+
+## What Documentation Works Best?
+
+| Good Inputs (Supported) | What Spigot Needs Inside the Doc | Inputs That Fail Closed (By Design) |
+|---|---|---|
+| **OpenAPI 3.0** (`.json`, `.yaml`, `.yml`)<br/>**REST API Markdown/Text** (`.md`, `.txt`)<br/>**Saved HTML API Docs** (`.html`)<br/>**Text-Layer REST API PDFs** (`.pdf`)<br/>**Multi-File Bundles** (`auth.md` + `api.pdf`) | 1. **Base URL** (e.g., `https://api.example.com/v1`)<br/>2. **HTTP Verb + Path** (`GET /v1/users/{id}`)<br/>3. **Auth Scheme** (`Bearer`, `X-API-Key`, or `Public`)<br/>4. **Parameters / JSON Body fields**<br/>*(Any missing item can be supplied via Review Overrides)* | **Language SDK manuals** (e.g., Python/JS class docs with no HTTP methods/URLs)<br/>**Marketing / overview blog posts** with no concrete endpoints<br/>**Scanned image-only PDFs** (`OCR_REQUIRED`)<br/>**Non-REST protocols** (GraphQL, gRPC, WebSockets) |
+
+---
+
+## Quickstart & How to Use
+
+### Option A: Interactive Local Web Studio (`http://127.0.0.1:8000`)
+Launch the local single-owner studio server ([`apps/api/server.py`](apps/api/server.py) + [`apps/web/index.html`](apps/web/index.html)):
+```powershell
+.\.venv\Scripts\uvicorn.exe apps.api.server:create_local_app --factory --host 127.0.0.1 --port 8000
+```
+Open **`http://127.0.0.1:8000`** in your browser to walk through the 5-step studio workflow:
+1. **Import Documentation Bundle:** Upload `.md`, `.txt`, `.html`, `.pdf`, `.json`, or `.yaml` files.
+2. **Inspect Evidence:** Review extracted endpoints alongside exact source quotes and page/line numbers.
+3. **Review & Resolve:** Supply audited owner overrides for any missing/ambiguous fields and freeze the contract.
+4. **Tool Pack & Policy:** Select a dependency-preserving tool pack and runtime policy (`read_only`, `restricted_write`, `approval_required`).
+5. **Validate & Export:** Run the 7-layer verifier and download the standalone MCP server `.zip`.
+
+### Option B: Python Pipeline CLI
+Compile any local documentation file or bundle directly from Python via [`compile_documentation_bundle`](packages/core/pipeline.py):
+```powershell
+.\.venv\Scripts\python.exe -c "
+from pathlib import Path
+from packages.core.pipeline import RawDocumentInput, compile_documentation_bundle
+from packages.core.planning import RuntimePolicy
+
+doc_path = Path('fixtures/p0_support_tickets/support_api_v1.md')
+result = compile_documentation_bundle(
+    [RawDocumentInput('src_1', doc_path.name, doc_path.read_bytes())],
+    contract_id='support_api_v1',
+    project_id='demo_project',
+    policy=RuntimePolicy(allowed_hosts=['api.support.internal']),
+    use_local_model=True,
+    output_dir=Path('build/support_mcp_server'),
+    zip_path=Path('build/support_mcp_server.zip'),
+)
+print('Exported MCP server with', len(result.contract.operations), 'operations!')
+"
+```
+
+### Option C: Standardized Verification & Benchmark Commands (`packages.core.release_evidence`)
 After dependencies are installed in `.venv` (`Python 3.13.14`, `uv 0.12.11`), run any standardized target from [IMPLEMENTATION.md](IMPLEMENTATION.md):
 
 ```powershell
@@ -33,15 +144,10 @@ After dependencies are installed in `.venv` (`Python 3.13.14`, `uv 0.12.11`), ru
 .\.venv\Scripts\python.exe -m packages.core.release_evidence release-verify
 ```
 
-### 2. Run the full 43-test suite directly
+### Run the full 43-test suite directly
 ```powershell
 .\.venv\Scripts\ruff.exe check .
 .\.venv\Scripts\pytest.exe -v
-```
-
-### 3. Launch the local single-owner review UI & API server
-```powershell
-.\.venv\Scripts\uvicorn.exe apps.api.server:create_local_app --factory --host 127.0.0.1 --port 8000
 ```
 
 ## Architecture & supported-feature summary
