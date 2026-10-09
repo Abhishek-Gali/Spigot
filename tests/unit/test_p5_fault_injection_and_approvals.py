@@ -554,6 +554,8 @@ async def test_t23_trusted_approval_authority_binding_ledger_and_self_approval_p
                 contract_hash=c_hash,
                 policy_hash=p_hash,
                 ttl_sec=120.0,
+                expected_action_digest=prep_api["action_digest"],
+                human_confirmed=True,
             )
             token_json = issued_api["approval_token_json"]
 

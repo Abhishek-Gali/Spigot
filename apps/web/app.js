@@ -11,6 +11,8 @@
     contractHash: "",
     isFrozen: false,
     planHash: "",
+    policyHash: "",
+    preparedActionDigest: "",
     artifactId: "",
     activeJobId: "",
   };
@@ -106,6 +108,7 @@
 
       if (proj.tool_plan) {
         state.planHash = proj.tool_plan.plan_hash;
+        state.policyHash = proj.tool_plan.policy_hash || "";
         document.getElementById("plan-summary-box").textContent =
           `Active ToolPlan: ${proj.tool_plan.id} | Selected Tools: ${proj.tool_plan.operation_ids.join(", ")} | Hash: ${state.planHash.slice(0, 16)}...`;
       }
@@ -466,6 +469,86 @@
       showAlert(err.message);
     }
   });
+
+  const btnPrepareApproval = document.getElementById("btn-prepare-approval");
+  const cbHumanConfirm = document.getElementById("checkbox-human-confirm");
+  const btnIssueApproval = document.getElementById("btn-issue-approval");
+  const formActionApproval = document.getElementById("form-action-approval");
+
+  if (cbHumanConfirm && btnIssueApproval) {
+    cbHumanConfirm.addEventListener("change", () => {
+      btnIssueApproval.disabled = !(cbHumanConfirm.checked && state.preparedActionDigest);
+    });
+  }
+
+  if (btnPrepareApproval) {
+    btnPrepareApproval.addEventListener("click", async () => {
+      showAlert("");
+      if (!state.projectId || !state.contractHash || !state.policyHash) {
+        showAlert("Freeze contract and save a Tool Plan before preparing an approval.");
+        return;
+      }
+      try {
+        const opId = document.getElementById("input-approval-op").value.trim();
+        const targetUrl = document.getElementById("input-approval-url").value.trim();
+        const rawArgs = document.getElementById("input-approval-args").value.trim() || "{}";
+        const parsedArgs = JSON.parse(rawArgs);
+        const prep = await apiFetch(`/api/projects/${state.projectId}/approvals/prepare`, {
+          method: "POST",
+          json: {
+            operation_id: opId,
+            arguments: parsedArgs,
+            target_url: targetUrl,
+            contract_hash: state.contractHash,
+            policy_hash: state.policyHash,
+          },
+        });
+        state.preparedActionDigest = prep.action_digest;
+        cbHumanConfirm.checked = false;
+        cbHumanConfirm.disabled = false;
+        btnIssueApproval.disabled = true;
+        document.getElementById("approval-preview-box").textContent =
+          `Prepared Action Digest: ${prep.action_digest}\nOperation: ${prep.operation_id}\nTarget URL: ${prep.target_url}\nArguments: ${JSON.stringify(prep.arguments)}`;
+      } catch (err) {
+        showAlert(err.message);
+      }
+    });
+  }
+
+  if (formActionApproval) {
+    formActionApproval.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      showAlert("");
+      if (!state.projectId || !state.preparedActionDigest) return;
+      try {
+        const opId = document.getElementById("input-approval-op").value.trim();
+        const targetUrl = document.getElementById("input-approval-url").value.trim();
+        const rawArgs = document.getElementById("input-approval-args").value.trim() || "{}";
+        const parsedArgs = JSON.parse(rawArgs);
+        const humanConfirmed = Boolean(cbHumanConfirm && cbHumanConfirm.checked);
+        const issued = await apiFetch(`/api/projects/${state.projectId}/approvals/issue`, {
+          method: "POST",
+          json: {
+            operation_id: opId,
+            arguments: parsedArgs,
+            target_url: targetUrl,
+            contract_hash: state.contractHash,
+            policy_hash: state.policyHash,
+            expected_action_digest: state.preparedActionDigest,
+            human_confirmed: humanConfirmed,
+          },
+        });
+        state.preparedActionDigest = "";
+        cbHumanConfirm.checked = false;
+        cbHumanConfirm.disabled = true;
+        btnIssueApproval.disabled = true;
+        document.getElementById("approval-preview-box").textContent =
+          `Issued Single-Use Token JSON:\n${issued.approval_token_json}\nSecret Key File: ${issued.approval_secret_file || "(configured)"}`;
+      } catch (err) {
+        showAlert(err.message);
+      }
+    });
+  }
 
   bootstrap();
 })();

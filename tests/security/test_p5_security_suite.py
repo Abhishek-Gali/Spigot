@@ -118,11 +118,13 @@ def test_t25_prompt_injection_parser_bounds_and_traversal() -> None:
         )
 
     # 2. Sandbox root containment blocks relative and absolute path traversal
-    sandbox_root = Path("C:/temp/spigot_sandbox_test").resolve()
+    sandbox_root = (Path.cwd() / "spigot_sandbox_test").resolve()
     with pytest.raises(PermissionError, match="escapes sandbox root"):
         resolve_within_sandbox_root(sandbox_root, "../../Windows/System32/cmd.exe")
     with pytest.raises(PermissionError, match="escapes sandbox root"):
         resolve_within_sandbox_root(sandbox_root, "C:/Windows/win.ini")
+    with pytest.raises(PermissionError, match="escapes sandbox root"):
+        resolve_within_sandbox_root(sandbox_root, "/etc/passwd")
 
     # 3. AST safety visitor detects eval, exec, os.system, and subprocess(..., shell=True)
     unsafe_code = (

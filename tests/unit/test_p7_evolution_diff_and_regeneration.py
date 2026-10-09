@@ -440,6 +440,7 @@ def test_t31_approval_invalidation_reproducibility_and_api_evolution_routes(
             contract_hash=hash_v1,
             policy_hash=policy_v1["policy_hash"],
             expected_action_digest=prep_v1["action_digest"],
+            human_confirmed=True,
         )
         token_v1 = issued["approval_token"]
 

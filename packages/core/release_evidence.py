@@ -793,6 +793,7 @@ def run_flagship_demo_rehearsal(
                 evaluate_agent_conditions(
                     split="held_out",
                     repetitions=1,
+                    oracle=oracle,
                 )
             )
             if eval_cache is not None:

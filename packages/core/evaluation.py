@@ -28,6 +28,7 @@ Implements:
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import io
 import json
@@ -1706,6 +1707,7 @@ async def evaluate_agent_conditions(
     repetitions: int = 1,
     agent_model_digest: str = "qwen2.5:1.5b@sha256:6a1a3529b1c1",
     extraction_model_digest: str = "qwen2.5:1.5b@sha256:6a1a3529b1c1",
+    oracle: DisposableEvalOracle | None = None,
 ) -> tuple[EvaluationRun, dict[str, Any]]:
     """Run paired local agent evaluation across Conditions A, B, and C (T29).
 
@@ -1715,7 +1717,13 @@ async def evaluate_agent_conditions(
     - Condition C (`spigot_tool_pack_rewritten`): Locally suggested tool pack with automatic
       prerequisite lookup preservation (`T28`) and structured description rewrites.
     """
-    with DisposableEvalOracle() as oracle:
+    oracle_ctx = (
+        contextlib.nullcontext(oracle)
+        if oracle is not None
+        else DisposableEvalOracle()
+    )
+    with oracle_ctx as active_oracle:
+        oracle = active_oracle
         variants = build_frozen_corpus_variants(base_url=oracle.base_url)
         variant_by_family: dict[str, BuiltCorpusVariant] = {}
         for v in variants:

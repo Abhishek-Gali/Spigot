@@ -651,10 +651,11 @@ def test_finding_7_approval_endpoints_validate_project_contract_plan_and_url(
                 target_url="http://127.0.0.1:19000/v1/transfers",
                 contract_hash=c_hash,
                 policy_hash=p_hash,
+                human_confirmed=True,
             )
         assert exc_unprepared.value.status_code == 409
 
-        # 5. Calling /approvals/issue with human_confirmed=False -> 403
+        # 5a. Raw HTTP request omitting human_confirmed entirely -> 403 POLICY_DENIED
         prep = client.prepare_approval(
             pid,
             operation_id="post_v1_transfers",
@@ -663,6 +664,22 @@ def test_finding_7_approval_endpoints_validate_project_contract_plan_and_url(
             contract_hash=c_hash,
             policy_hash=p_hash,
         )
+        raw_omitted = http_client.post(
+            f"/api/projects/{pid}/approvals/issue",
+            headers={"X-Spigot-Token": "tok-approvals"},
+            json={
+                "operation_id": "post_v1_transfers",
+                "arguments": {},
+                "target_url": "http://127.0.0.1:19000/v1/transfers",
+                "contract_hash": c_hash,
+                "policy_hash": p_hash,
+                "expected_action_digest": prep["action_digest"],
+            },
+        )
+        assert raw_omitted.status_code == 403
+        assert raw_omitted.json()["code"] == "POLICY_DENIED"
+
+        # 5b. Calling /approvals/issue with explicit human_confirmed=False -> 403
         with pytest.raises(SpigotApiError) as exc_unconfirmed:
             client.issue_approval(
                 pid,
@@ -690,7 +707,7 @@ def test_finding_7_approval_endpoints_validate_project_contract_plan_and_url(
             )
         assert exc_bad_digest.value.status_code == 409
 
-        # 7. Valid prepared + human_confirmed issuance succeeds once and consumes prepared state
+        # 7. Valid prepared + human_confirmed=True issuance succeeds once and consumes prepared state
         issued = client.issue_approval(
             pid,
             operation_id="post_v1_transfers",
@@ -719,9 +736,11 @@ def test_finding_7_approval_endpoints_validate_project_contract_plan_and_url(
 @pytest.mark.asyncio
 async def test_priority_2_default_api_to_runtime_secret_provisioning_and_restart_replay(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Default LocalApiConfig provisions a persisted workspace secret shared via SPIGOT_APPROVAL_SECRET_FILE."""
+    """Default LocalApiConfig provisions a persisted workspace secret usable by an extracted exported package."""
     ws_dir = tmp_path / "shared_ws"
+    standalone_dir = tmp_path / "standalone_exported_package"
 
     class MockTransferHandler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: Any) -> None:
@@ -787,7 +806,11 @@ async def test_priority_2_default_api_to_runtime_secret_provisioning_and_restart
                 contract_hash=frz["canonical_hash"],
                 policy_mode="approval_required",
             )
-            gen = client.generate_artifact(pid, plan_hash=tp["tool_plan"]["plan_hash"])
+            gen = client.generate_artifact(
+                pid,
+                plan_hash=tp["tool_plan"]["plan_hash"],
+                package_slug="standalone_transfers_srv",
+            )
             zip_bytes = client.download_artifact_zip(gen["result"]["artifact_id"])
 
             # Verify provisioned secret is NEVER embedded in the exported ZIP
@@ -813,29 +836,45 @@ async def test_priority_2_default_api_to_runtime_secret_provisioning_and_restart
                 human_confirmed=True,
             )
             assert issued["approval_secret_file"] == str(provisioned_key_file.resolve())
-            summary = client.get_project(pid)
 
-        # 3. Extract the generated server's contract, plan, and policy and run ContractRuntimeEngine
-        #    using SPIGOT_APPROVAL_SECRET_FILE (no raw secret in env)
+        # 3. Extract the exported ZIP into a completely separate directory outside ws_dir
+        standalone_dir.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
+            zf.extractall(standalone_dir)
+
+        exported_contract = json.loads(
+            (standalone_dir / "contract.json").read_text(encoding="utf-8")
+        )
+        exported_plan = json.loads(
+            (standalone_dir / "tool_plan.json").read_text(encoding="utf-8")
+        )
+        exported_policy = json.loads(
+            (standalone_dir / "policy.json").read_text(encoding="utf-8")
+        )
+
+        # Run from the separate standalone directory, pointing SPIGOT_APPROVAL_SECRET_FILE
+        # to the API's provisioned key file
+        monkeypatch.chdir(standalone_dir)
         runtime_env = {
             "SPIGOT_CRED_API_KEY_HEADER": "live-api-key-val",
             "SPIGOT_APPROVAL_SECRET_FILE": issued["approval_secret_file"],
             "SPIGOT_ACTION_APPROVAL_TOKEN": issued["approval_token_json"],
         }
         engine1 = ContractRuntimeEngine(
-            contract_data=summary["contract"],
-            tool_plan_data=summary["tool_plan"],
-            policy_data=tp["policy"],
+            contract_data=exported_contract,
+            tool_plan_data=exported_plan,
+            policy_data=exported_policy,
             environ=runtime_env,
         )
         res1 = await engine1.call_tool_async("post_v1_transfers", {})
         assert res1.is_error is False
+        assert (ws_dir / "consumed_approvals.sqlite3").is_file()
 
-        # 4. Simulated process restart with the same token is rejected by the workspace SQLite ledger
+        # 4. Simulated process restart of the standalone package with the same token is rejected
         engine2 = ContractRuntimeEngine(
-            contract_data=summary["contract"],
-            tool_plan_data=summary["tool_plan"],
-            policy_data=tp["policy"],
+            contract_data=exported_contract,
+            tool_plan_data=exported_plan,
+            policy_data=exported_policy,
             environ=runtime_env,
         )
         res2 = await engine2.call_tool_async("post_v1_transfers", {})

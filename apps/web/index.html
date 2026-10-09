@@ -267,6 +267,40 @@ POST /v1/charges
         <div id="export-summary-box" class="meta-box">
           No generated artifact yet.
         </div>
+
+        <h3>Owner Action Approval Authority (Two-Step Human Confirmation)</h3>
+        <p class="helper-text">
+          For <code>approval_required</code> policies, prepare the canonical action digest first,
+          review the exact operation, arguments, and target URL, then explicitly confirm to issue a
+          single-use HMAC approval token.
+        </p>
+        <form id="form-action-approval">
+          <label for="input-approval-op">Operation ID</label>
+          <input id="input-approval-op" type="text" placeholder="e.g., post_v1_transfers" />
+
+          <label for="input-approval-url">Target URL</label>
+          <input id="input-approval-url" type="text" placeholder="e.g., http://127.0.0.1:18080/v1/transfers" />
+
+          <label for="input-approval-args">Arguments (JSON object)</label>
+          <textarea id="input-approval-args" rows="2" placeholder='{"body": {"amount": 2500}}'>{}</textarea>
+
+          <div class="button-row">
+            <button type="button" id="btn-prepare-approval" class="btn-secondary">1. Prepare Action Digest</button>
+          </div>
+
+          <div id="approval-preview-box" class="meta-box">
+            No action prepared yet.
+          </div>
+
+          <label class="item-row">
+            <input type="checkbox" id="checkbox-human-confirm" disabled />
+            <span>I have reviewed and confirm the exact operation, arguments, and target URL above.</span>
+          </label>
+
+          <div class="button-row">
+            <button type="submit" id="btn-issue-approval" class="btn-primary" disabled>2. Issue Single-Use Approval Token</button>
+          </div>
+        </form>
       </div>
     </section>
   </main>

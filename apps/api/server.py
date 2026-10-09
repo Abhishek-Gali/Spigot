@@ -312,7 +312,7 @@ class ApprovalActionRequest(BaseModel):
     policy_hash: str = Field(min_length=1)
     ttl_sec: float = Field(default=120.0, gt=0.0, le=3600.0)
     expected_action_digest: str | None = None
-    human_confirmed: bool = True
+    human_confirmed: bool = False
 
 
 def _error_response(

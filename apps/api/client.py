@@ -388,7 +388,7 @@ class SpigotApiClient:
         policy_hash: str,
         ttl_sec: float = 120.0,
         expected_action_digest: str | None = None,
-        human_confirmed: bool = True,
+        human_confirmed: bool = False,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "operation_id": operation_id,

@@ -214,7 +214,15 @@ def qualify_container_sandbox(
 def resolve_within_sandbox_root(sandbox_root: Path, candidate_path: str | Path) -> Path:
     """Resolve a path and raise PermissionError if it escapes `sandbox_root`."""
     root_resolved = sandbox_root.resolve()
+    raw_str = str(candidate_path).strip()
     raw_path = Path(candidate_path)
+    has_drive_or_root_prefix = raw_str.startswith(("/", "\\")) or (
+        len(raw_str) >= 2 and raw_str[0].isalpha() and raw_str[1] == ":"
+    )
+    if has_drive_or_root_prefix and not raw_path.is_absolute():
+        raise PermissionError(
+            f"Path '{candidate_path}' escapes sandbox root '{root_resolved}'."
+        )
     target = (
         raw_path.resolve()
         if raw_path.is_absolute()
