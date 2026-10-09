@@ -77,7 +77,9 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MiB
 
 @dataclass
 class LocalApiConfig:
-    workspace_dir: Path
+    workspace_dir: Path = field(
+        default_factory=lambda: Path.cwd() / ".spigot" / "workspace"
+    )
     capability_token: str = field(default_factory=lambda: secrets.token_urlsafe(32))
     approval_secret: str = field(default_factory=lambda: secrets.token_urlsafe(32))
     default_network_profile: Literal["STRICT_OFFLINE", "CONNECTED_SERVICES"] = "STRICT_OFFLINE"
@@ -284,11 +286,13 @@ def _job_to_dict(job: JobRecord) -> dict[str, Any]:
 
 
 def create_local_app(
-    config: LocalApiConfig,
+    config: LocalApiConfig | None = None,
     *,
     inference_adapter: OllamaInferenceAdapter | None = None,
 ) -> FastAPI:
     """Create the local-only FastAPI application for Spigot / DocForge MCP."""
+    if config is None:
+        config = LocalApiConfig()
     storage = SpigotStorage(config.workspace_dir)
     jobs = JobCoordinator(storage)
     ollama = inference_adapter or OllamaInferenceAdapter()
