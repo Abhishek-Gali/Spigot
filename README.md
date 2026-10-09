@@ -1,5 +1,7 @@
 # Spigot (DocForge MCP) — Local Documentation-to-MCP Compiler
 
+![Spigot (DocForge MCP) — Local Documentation-to-MCP Compiler](docs/assets/social_preview.png)
+
 **Status: Flagship Release Complete (`P0`–`P8`, Tickets `T01`–`T32` verified; see [PROGRESS.md](PROGRESS.md) and [docs/release_evidence/RELEASE_EVIDENCE_REPORT.md](docs/release_evidence/RELEASE_EVIDENCE_REPORT.md)).**
 
 Version 1.0 • 9 October 2026 • Dual project branding: **Spigot** / **DocForge MCP**.
