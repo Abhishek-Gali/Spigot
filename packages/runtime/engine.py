@@ -552,6 +552,13 @@ class ContractRuntimeEngine:
                 elif s_type == "apiKey" and scheme.get("location") == "query":
                     q_name = scheme.get("name") or "api_key"
                     queries.append((q_name, val))
+                elif s_type == "apiKey" and scheme.get("location") == "cookie":
+                    cookie_name = scheme.get("name") or "session"
+                    cookie_pair = f"{cookie_name}={val}"
+                    if "Cookie" in headers:
+                        headers["Cookie"] = f"{headers['Cookie']}; {cookie_pair}"
+                    else:
+                        headers["Cookie"] = cookie_pair
                 else:
                     alt_satisfied = False
                     break

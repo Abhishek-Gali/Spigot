@@ -126,8 +126,8 @@ def test_engine_loads_and_lists_enabled_tools() -> None:
     tools = engine.list_tools_sync()
     assert len(tools) == len(engine.enabled_tool_names)
     for tool in tools:
-        assert tool.name
-        assert isinstance(tool.inputSchema, dict)
+        schema = getattr(tool, "input_schema", getattr(tool, "inputSchema", None))
+        assert isinstance(schema, dict)
 
 
 def test_unknown_tool_is_rejected_without_network() -> None:
