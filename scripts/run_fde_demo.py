@@ -1,4 +1,4 @@
-"""Reproducible End-to-End FDE Integration & Operational Failure Demo for Spigot.
+"""Reproducible End-to-End FDE Integration & Operational Failure Demo for MCP Bridge (The API to MCP).
 
 Run this script from the repository root:
     uv run python scripts/run_fde_demo.py

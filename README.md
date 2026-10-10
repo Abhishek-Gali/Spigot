@@ -1,7 +1,7 @@
-# Spigot (DocForge MCP)
+# MCP Bridge (The API to MCP)
 
 <p align="center">
-  <img src="docs/assets/social_preview.png" alt="Spigot (DocForge MCP) — Evidence-Backed API Documentation-to-MCP Compiler" width="900" />
+  <img src="docs/assets/social_preview.png" alt="MCP Bridge (The API to MCP) — Evidence-Backed API Documentation-to-MCP Compiler" width="900" />
 </p>
 
 <p align="center">
@@ -12,20 +12,20 @@
   <img src="https://img.shields.io/badge/license-Apache_2.0-slate" alt="License: Apache 2.0" />
 </p>
 
-**Spigot (DocForge MCP)** is a local-first integration compiler and policy-enforcing runtime that turns messy, multi-format API documentation (`.md`, `.html`, `.pdf`, `.yaml`/`.json`) into audited, standalone **Model Context Protocol (MCP)** servers.
+**MCP Bridge (The API to MCP)** is a local-first integration compiler and policy-enforcing runtime that turns messy, multi-format API documentation (`.md`, `.html`, `.pdf`, `.yaml`/`.json`) into audited, standalone **Model Context Protocol (MCP)** servers.
 
 ---
 
-## 1. The Problem & Why Spigot Exists (2-Minute Overview)
+## 1. The Problem & Why MCP Bridge Exists (2-Minute Overview)
 
 When Forward Deployed Engineers (FDEs) and integration engineers connect an AI agent to a customer's internal services, the customer rarely hands over a clean, validated OpenAPI 3.1 specification. Instead, documentation arrives as a mix of **Markdown runbooks, developer portal HTML exports, typeset PDF manuals, and partial OpenAPI files**.
 
 Connecting agents to these services in real deployments fails in four predictable ways:
 
-1. **Missing or conflicting endpoint specs cause silent hallucinations:** A prose runbook omits the HTTP verb on a maintenance endpoint or disagrees with an older spec on a URL path. Prompt-based wrappers guess the missing fields. **Spigot fails closed**, raising typed blocker findings (`MISSING_METHOD`, `UNKNOWN_AUTH`, `CONFLICTING_PATH`) tied to exact character offsets (`EvidenceRef`) and requiring an audited human override before compilation can proceed.
-2. **Unguarded write operations create operational risk:** Exposing `POST`, `PUT`, or `DELETE` endpoints directly to an agent risks unauthorized state mutations or replayed approvals. **Spigot enforces policy inside the generated runtime** (`read_only`, `restricted_write`, or `approval_required` with two-step human confirmation, HMAC-SHA256 action binding, and a persistent SQLite single-use nonce ledger).
-3. **Unfiltered API surfaces bloat agent context:** Dumping 50–100 raw endpoints into an MCP server degrades tool selection and wastes tokens. **Spigot compiles task-scoped `ToolPlan`s** that prune unrelated operations while preserving prerequisite lookup dependencies (reducing advertised schema tokens from **1,001 to 410** on our benchmark corpus).
-4. **Upstream API updates silently break integrations:** When a customer adds a required parameter in `v2`, existing agent tools fail at runtime with opaque errors. **Spigot computes a normalized semantic diff (`ContractDiffReport`)**, flags breaking changes against affected MCP tools, invalidates stale approvals, and carries forward still-valid human overrides.
+1. **Missing or conflicting endpoint specs cause silent hallucinations:** A prose runbook omits the HTTP verb on a maintenance endpoint or disagrees with an older spec on a URL path. Prompt-based wrappers guess the missing fields. **MCP Bridge fails closed**, raising typed blocker findings (`MISSING_METHOD`, `UNKNOWN_AUTH`, `CONFLICTING_PATH`) tied to exact character offsets (`EvidenceRef`) and requiring an audited human override before compilation can proceed.
+2. **Unguarded write operations create operational risk:** Exposing `POST`, `PUT`, or `DELETE` endpoints directly to an agent risks unauthorized state mutations or replayed approvals. **MCP Bridge enforces policy inside the generated runtime** (`read_only`, `restricted_write`, or `approval_required` with two-step human confirmation, HMAC-SHA256 action binding, and a persistent SQLite single-use nonce ledger).
+3. **Unfiltered API surfaces bloat agent context:** Dumping 50–100 raw endpoints into an MCP server degrades tool selection and wastes tokens. **MCP Bridge compiles task-scoped `ToolPlan`s** that prune unrelated operations while preserving prerequisite lookup dependencies (reducing advertised schema tokens from **1,001 to 410** on our benchmark corpus).
+4. **Upstream API updates silently break integrations:** When a customer adds a required parameter in `v2`, existing agent tools fail at runtime with opaque errors. **MCP Bridge computes a normalized semantic diff (`ContractDiffReport`)**, flags breaking changes against affected MCP tools, invalidates stale approvals, and carries forward still-valid human overrides.
 
 ---
 
@@ -62,7 +62,7 @@ flowchart LR
 
 ### B. Runtime Execution, Approval & Failure-Handling Flow (`packages/runtime/engine.py`)
 
-Every exported `.zip` package contains a self-contained runtime (`ContractRuntimeEngine`) that executes tool calls without requiring the Spigot backend or a local LLM:
+Every exported `.zip` package contains a self-contained runtime (`ContractRuntimeEngine`) that executes tool calls without requiring the MCP Bridge backend or a local LLM:
 
 ```mermaid
 sequenceDiagram
@@ -168,7 +168,7 @@ uv run pytest -v
 Below is the exact scenario executed by [`scripts/run_fde_demo.py`](scripts/run_fde_demo.py) using the sample customer runbook [`examples/05_flagship_review_demo.md`](examples/05_flagship_review_demo.md) (**FleetCloud Kubernetes & Node Orchestrator API**):
 
 ### Step 1: Ingest Messy Customer Documentation & Catch Blocker Findings
-The customer's Markdown manual documents 5 endpoints, but section 4 (`Drain Cluster Nodes`) omits the HTTP method (`Endpoint path: /v1/clusters/{cluster_id}/drain`). Spigot refuses to guess:
+The customer's Markdown manual documents 5 endpoints, but section 4 (`Drain Cluster Nodes`) omits the HTTP method (`Endpoint path: /v1/clusters/{cluster_id}/drain`). MCP Bridge refuses to guess:
 
 ```text
 ==============================================================================
@@ -229,7 +229,7 @@ STEP 4: Operational Failure Handling & Recovery Verification
 ```
 
 ### Step 5: Contract `v1 -> v2` Breaking Drift Detection
-When the customer updates the documentation in `v2` to add a required `cost_center` body field to `POST /v1/clusters`, Spigot flags the breaking change while automatically carrying forward the still-valid human override on `/v1/clusters/{cluster_id}/drain`:
+When the customer updates the documentation in `v2` to add a required `cost_center` body field to `POST /v1/clusters`, MCP Bridge flags the breaking change while automatically carrying forward the still-valid human override on `/v1/clusters/{cluster_id}/drain`:
 
 ```text
 ==============================================================================
@@ -269,10 +269,10 @@ The test suite (`uv run pytest -v`, **55 passed**) is organized into 5 layers:
 
 ### Honest Limitations & Non-Goals
 
-Spigot is an engineering portfolio system and local integration compiler, **not** a hardened multi-tenant cloud platform:
+**MCP Bridge (The API to MCP)** is an engineering portfolio system and local integration compiler, **not** a hardened multi-tenant cloud platform:
 1. **In-Process Socket Guard vs. OS Sandbox:** `NetworkPolicyGuard.enforce_socket_guard()` monkey-patches Python's `socket` module with a lock-synchronized guard stack as defense-in-depth. It is **not** a kernel or container boundary. When Docker or Podman is not installed on the host, `IsolatedValidationWorker` runs static AST, manifest, protocol, and security checks and truthfully reports `sandbox_status="unavailable"`—never silently claiming container isolation.
 2. **Static AST Validation:** The validation worker scans generated Python files with `ast.parse` and rejects forbidden imports (`subprocess`, `os.system`, `eval`, `exec`). Static AST inspection catches accidental template regressions, not arbitrary untrusted Python code.
-3. **Scanned PDFs Fail Closed (`OCR_REQUIRED`):** Spigot extracts embedded text and tables from digital PDFs via `pypdf`. It does not bundle a cloud OCR client or heavy OCR binary; scanned image-only PDFs fail closed with a blocker finding.
+3. **Scanned PDFs Fail Closed (`OCR_REQUIRED`):** MCP Bridge extracts embedded text and tables from digital PDFs via `pypdf`. It does not bundle a cloud OCR client or heavy OCR binary; scanned image-only PDFs fail closed with a blocker finding.
 4. **Supported Protocol Scope:** v1 supports HTTP/HTTPS REST endpoints with JSON request/response bodies, path/query/header parameters, and API Key, Bearer, or Basic authentication. GraphQL, gRPC, WebSockets, OAuth2 browser flows, and multipart upstream file uploads are marked `unsupported` in the generated `compatibility_report.json`.
 5. **Local AI Extraction Is Optional:** Deterministic extraction handles structured Markdown tables, HTML developer portals, digital PDFs, and OpenAPI 3.0/3.1 out of the box. Free-form prose extraction requires a local [Ollama](https://ollama.com) instance (`127.0.0.1:11434`); when Ollama is absent, the UI and API expose manual review overrides honestly and never call cloud LLMs.
 
@@ -280,7 +280,7 @@ Spigot is an engineering portfolio system and local integration compiler, **not*
 
 ## 6. Sample API Documentation Gallery (`examples/`)
 
-You can test Spigot immediately using the 5 sample files in [`examples/`](examples/) (also available via 1-click buttons in Step 1 of the Web Studio):
+You can test **MCP Bridge** immediately using the 5 sample files in [`examples/`](examples/) (also available via 1-click buttons in Step 1 of the Web Studio):
 
 | File | Format | API Described | Extracted Endpoints |
 |---|---|---|---|
@@ -291,7 +291,7 @@ You can test Spigot immediately using the 5 sample files in [`examples/`](exampl
 | [`examples/05_flagship_review_demo.md`](examples/05_flagship_review_demo.md) | Markdown with 1 Blocker (`.md`) | **FleetCloud Kubernetes Orchestrator API (`v1.4`)** | 4 ready endpoints + **1 ambiguous endpoint (`/v1/clusters/{cluster_id}/drain`)** that triggers `MISSING_METHOD` for override testing |
 
 <p align="center">
-  <img src="docs/assets/doc_anatomy_guide.png" alt="Anatomy of a Valid API Documentation Input for Spigot" width="880" />
+  <img src="docs/assets/doc_anatomy_guide.png" alt="Anatomy of a Valid API Documentation Input for MCP Bridge (The API to MCP)" width="880" />
 </p>
 
 ---

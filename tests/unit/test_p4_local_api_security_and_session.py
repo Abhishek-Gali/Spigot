@@ -21,8 +21,8 @@ def test_t19_ui_assets_session_bootstrap_and_security_guards(tmp_path: Path) -> 
     # 1. Local UI assets are served with nosniff and DENY frame headers
     idx_res = raw_client.get("/")
     assert idx_res.status_code == 200
-    assert "Spigot" in idx_res.text
-    assert "DocForge MCP" in idx_res.text
+    assert "MCP Bridge" in idx_res.text
+    assert "The API to MCP" in idx_res.text
     assert idx_res.headers["X-Content-Type-Options"] == "nosniff"
     assert idx_res.headers["X-Frame-Options"] == "DENY"
 
@@ -89,7 +89,7 @@ def test_t19_typed_client_offline_fetch_denial_jobs_and_project_deletion(
     client = SpigotApiClient(raw_client)
 
     session = client.bootstrap_session()
-    assert session["brandings"] == ["Spigot", "DocForge MCP"]
+    assert session["brandings"] == ["MCP Bridge", "The API to MCP"]
     assert session["default_network_profile"] == "STRICT_OFFLINE"
     assert session["sandbox_available"] is False
 

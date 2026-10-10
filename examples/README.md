@@ -1,6 +1,6 @@
-# Spigot (DocForge MCP) — Sample API Documentation Gallery
+# MCP Bridge (The API to MCP) — Sample API Documentation Gallery
 
-This directory contains 5 realistic, production-style API documentation files across all 4 formats supported by **Spigot (DocForge MCP)**. You can upload any of these files in **Step 1 (`1. Project & Import`)** of the Web Studio (`http://127.0.0.1:8000`)—or click the **1-Click Sample API Docs** buttons directly inside the UI.
+This directory contains 5 realistic, production-style API documentation files across all 4 formats supported by **MCP Bridge (The API to MCP)**. You can upload any of these files in **Step 1 (`1. Project & Import`)** of the Web Studio (`http://127.0.0.1:8000`)—or click the **1-Click Sample API Docs** buttons directly inside the UI.
 
 ## Included Sample Files
 
@@ -16,7 +16,7 @@ This directory contains 5 realistic, production-style API documentation files ac
 
 ## Side-by-Side: What Makes a Document Valid vs. Blocked?
 
-Spigot compiles **concrete HTTP REST API documentation** into MCP tools. It fails closed (`NOT_API_DOCUMENTATION`) when given documents that do not describe actual HTTP endpoints.
+MCP Bridge compiles **concrete HTTP REST API documentation** into MCP tools. It fails closed (`NOT_API_DOCUMENTATION`) when given documents that do not describe actual HTTP endpoints.
 
 ### ✅ Valid Input (HTTP REST API Reference)
 ```markdown

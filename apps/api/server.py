@@ -404,7 +404,7 @@ def create_local_app(
     generated_dir.mkdir(parents=True, exist_ok=True)
 
     app = FastAPI(
-        title="Spigot (DocForge MCP) Local Compiler API",
+        title="MCP Bridge (The API to MCP) Local Compiler API",
         version="0.1.0",
         docs_url=None,
         redoc_url=None,
@@ -505,7 +505,7 @@ def create_local_app(
         index_path = config.web_assets_dir / "index.html"
         if not index_path.exists():
             return HTMLResponse(
-                "<h1>Spigot / DocForge MCP Local UI assets not found</h1>",
+                "<h1>MCP Bridge (The API to MCP) Local UI assets not found</h1>",
                 status_code=404,
             )
         return HTMLResponse(index_path.read_text(encoding="utf-8"))
@@ -530,8 +530,8 @@ def create_local_app(
     async def get_session_bootstrap() -> dict[str, Any]:
         health = ollama.check_health()
         return {
-            "product_name": "Spigot (DocForge MCP)",
-            "brandings": ["Spigot", "DocForge MCP"],
+            "product_name": "MCP Bridge (The API to MCP)",
+            "brandings": ["MCP Bridge", "The API to MCP"],
             "capability_token": config.capability_token,
             "default_network_profile": config.default_network_profile,
             "sandbox_available": False,

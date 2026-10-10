@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "spigot-docforge-mcp"
 version = "0.1.0"
-description = "Spigot (DocForge MCP): Local-first offline documentation-to-MCP compiler with evidence-backed extraction, deterministic code generation, and runtime policy enforcement."
+description = "MCP Bridge (The API to MCP): Local-first offline documentation-to-MCP compiler with evidence-backed extraction, deterministic code generation, and runtime policy enforcement."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }

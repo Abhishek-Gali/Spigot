@@ -1,6 +1,6 @@
-# Spigot (DocForge MCP) — Portfolio & FDE Reviewer Guide
+# MCP Bridge (The API to MCP) — Portfolio & FDE Reviewer Guide
 
-This document provides a concise, reproducible walkthrough for Forward Deployed Engineer (FDE) interviewers and engineering reviewers evaluating **Spigot (DocForge MCP)**.
+This document provides a concise, reproducible walkthrough for Forward Deployed Engineer (FDE) interviewers and engineering reviewers evaluating **MCP Bridge (The API to MCP)**.
 
 ## 1. Fastest Way to Verify Everything (`~3 seconds`)
 
